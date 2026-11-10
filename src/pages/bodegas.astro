@@ -46,7 +46,8 @@ import FormError from "../components/ui/FormError.astro";
       <div class="span-2"><FormError /></div>
       <div class="field">
         <span class="label">País</span>
-        <Select name="pais" searchable creatable createLabel="Crear país" placeholder="Elegir país" options={[]} />
+        <Select name="pais" searchable placeholder="Elegir país" options={[]} />
+        <span class="hint">¿No está? Agrégalo en <a href="/paises">Países y monedas</a>.</span>
       </div>
       <div class="field">
         <span class="label">Ciudad</span>
@@ -66,7 +67,7 @@ import FormError from "../components/ui/FormError.astro";
 <script>
   import "../lib/ui";
   import { initTableFilter } from "../lib/ui/table-filter";
-  import { bodegas, bodega, stockFilas, guardarBodega, setActivo } from "../lib/store";
+  import { bodegas, bodega, paises, stockFilas, guardarBodega, setActivo } from "../lib/store";
   import { money, num, esc, searchText, menu, intentar, dsSelect, uniqueOptions, flashRow, sinNuevo as texto } from "../lib/view";
 
   const scope = document.querySelector<HTMLElement>("[data-table]")!;
@@ -115,8 +116,8 @@ import FormError from "../components/ui/FormError.astro";
   // Catálogos: países y ciudades que ya existen (ciudades del país elegido primero)
   function opciones() {
     const bs = bodegas();
-    pais.setOptions(uniqueOptions(bs.map((b) => b.pais)));
-    const p = texto(pais.value);
+    pais.setOptions(paises().map((x) => ({ value: x.nombre, label: x.nombre, hint: x.moneda })));
+    const p = pais.value;
     ciudad.setOptions(uniqueOptions(bs.filter((b) => !p || b.pais === p).map((b) => b.ciudad)));
   }
   pais.addEventListener("change", opciones);
@@ -142,7 +143,7 @@ import FormError from "../components/ui/FormError.astro";
     let id = "";
     const ok = await intentar(
       form,
-      async () => (id = await guardarBodega({ id: editando || undefined, nombre: nombre.value.trim(), ciudad: texto(ciudad.value), pais: texto(pais.value) })),
+      async () => (id = await guardarBodega({ id: editando || undefined, nombre: nombre.value.trim(), ciudad: texto(ciudad.value), pais: pais.value })),
       editando ? "Bodega actualizada" : "Bodega creada",
     );
     if (!ok) return;

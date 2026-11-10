@@ -35,18 +35,29 @@ create table if not exists inventario.perfiles (
 );
 create unique index if not exists perfiles_un_superadmin on inventario.perfiles ((true)) where rol = 'superadmin';
 
--- Bodegas (tipo 'monitor' = maleta de un monitor)
+-- Países: cada uno vende en su moneda y con sus precios (German, 2026-11-09).
+-- tasa = cuántos pesos vale 1 unidad de su moneda (para sumar todo en pesos). La pone el admin y la cambia cuando quiera.
+create table if not exists inventario.paises (
+  nombre text primary key,
+  moneda text not null check (moneda ~ '^[A-Z]{3}$'),
+  tasa   numeric(14,6) not null default 1 check (tasa > 0),
+  check (moneda <> 'COP' or tasa = 1)
+);
+create unique index if not exists paises_nombre on inventario.paises (lower(nombre));
+insert into inventario.paises (nombre, moneda) values ('Colombia', 'COP') on conflict do nothing;
+
+-- Bodegas (tipo 'monitor' = maleta de un monitor). Toda bodega y maleta es de un país: de ahí sale la moneda de sus ventas.
 create table if not exists inventario.bodegas (
   id         uuid primary key default gen_random_uuid(),
   nombre     text not null,
   ciudad     text not null default '',
-  pais       text not null default '',
+  pais       text not null references inventario.paises(nombre) on update cascade,
   tipo       text not null default 'bodega' check (tipo in ('bodega','monitor')),
   monitor_id uuid unique references inventario.perfiles(id) on delete restrict,
   activa     boolean not null default true,
   created_at timestamptz not null default now(),
   check ((tipo = 'monitor') = (monitor_id is not null)),
-  check (tipo = 'monitor' or (ciudad <> '' and pais <> ''))
+  check (tipo = 'monitor' or ciudad <> '')
 );
 
 create table if not exists inventario.productos (
@@ -54,12 +65,19 @@ create table if not exists inventario.productos (
   codigo       text not null,
   nombre       text not null,
   unidad       text not null default 'und',
-  precio_venta numeric(14,2) not null default 0 check (precio_venta >= 0),
   stock_minimo numeric(14,2) not null default 0 check (stock_minimo >= 0),
   activo       boolean not null default true,
   created_at   timestamptz not null default now()
 );
 create unique index if not exists productos_codigo on inventario.productos (lower(codigo));
+
+-- Precio de venta de cada producto en cada país (en la moneda del país). Sin fila = sin precio ahí.
+create table if not exists inventario.precios (
+  producto_id uuid not null references inventario.productos(id) on delete cascade,
+  pais        text not null references inventario.paises(nombre) on update cascade on delete cascade,
+  precio      numeric(14,2) not null check (precio > 0),
+  primary key (producto_id, pais)
+);
 
 -- Costo promedio aparte: los monitores nunca lo reciben
 create table if not exists inventario.producto_costos (
@@ -99,7 +117,7 @@ create table if not exists inventario.movimientos (
   proveedor_id   uuid references inventario.proveedores(id),
   metodo_pago_id smallint references inventario.metodos_pago(id),
   curso          text,
-  moneda         text not null check (moneda in ('COP','USD')),
+  moneda         text not null check (moneda ~ '^[A-Z]{3}$'),
   tasa           numeric(14,6) not null default 1 check (tasa > 0),  -- 1 unidad de «moneda» = tasa pesos
   nota           text,
   anulado        boolean not null default false,
@@ -132,12 +150,13 @@ create table if not exists inventario.stock (
 );
 create index if not exists stock_producto on inventario.stock (producto_id);
 
--- Dinero que un monitor entrega de sus ventas
+-- Dinero que un monitor entrega de sus ventas (en la moneda de su país)
 create table if not exists inventario.pagos (
   id             bigint generated always as identity primary key,
   bodega_id      uuid not null references inventario.bodegas(id),
   fecha          date not null default current_date,
   valor          numeric(14,2) not null check (valor > 0),
+  moneda         text not null default 'COP',
   metodo_pago_id smallint references inventario.metodos_pago(id),
   nota           text,
   creado_por     uuid not null references inventario.perfiles(id),
@@ -198,6 +217,7 @@ end $$;
 
 -- Registra UN movimiento (lo llama inv_registrar). p: {tipo, origen_id, destino_id, items:[{producto_id, cantidad,
 -- valor_unitario}], fecha, proveedor_id, proveedor_nuevo, metodo_pago_id, curso, moneda, tasa, nota}
+-- Moneda: la compra dice en cuál se pagó; la venta va en la moneda del país de donde sale (y con su tasa del día).
 create or replace function inventario.registrar(p jsonb, v_yo inventario.perfiles)
 returns bigint language plpgsql security definer set search_path = '' as $$
 declare
@@ -206,8 +226,8 @@ declare
   v_dest   uuid := nullif(p->>'destino_id', '')::uuid;
   v_prov   uuid := nullif(p->>'proveedor_id', '')::uuid;
   v_metodo smallint := nullif(p->>'metodo_pago_id', '')::smallint;
-  v_moneda text := coalesce(nullif(p->>'moneda', ''), 'COP');
-  v_tasa   numeric := case when coalesce(nullif(p->>'moneda', ''), 'COP') = 'COP' then 1 else nullif(p->>'tasa', '')::numeric end;
+  v_moneda text := upper(coalesce(nullif(trim(p->>'moneda'), ''), 'COP'));
+  v_tasa   numeric := nullif(p->>'tasa', '')::numeric;
   v_o      inventario.bodegas;
   v_d      inventario.bodegas;
   v_id     bigint;
@@ -245,7 +265,13 @@ begin
     raise exception 'El origen o el destino no corresponden a este tipo de movimiento.';
   end if;
 
-  if v_moneda not in ('COP','USD') then raise exception 'Moneda no válida.'; end if;
+  if v_tipo = 'venta' then
+    select moneda, tasa into v_moneda, v_tasa from inventario.paises where nombre = v_o.pais;
+  elsif v_tipo <> 'compra' then
+    v_moneda := 'COP';
+  end if;
+  if v_moneda = 'COP' then v_tasa := 1; end if;
+  if v_moneda !~ '^[A-Z]{3}$' then raise exception 'Moneda no válida.'; end if;
   if v_tasa is null or v_tasa <= 0 then raise exception 'Escribe la tasa de cambio.'; end if;
 
   if v_tipo = 'compra' then
@@ -325,6 +351,9 @@ begin
   return jsonb_build_object(
     'yo', jsonb_build_object('id', v_yo.id, 'nombre', v_yo.nombre, 'usuario', v_yo.usuario, 'rol', v_yo.rol),
     'moneda', (select valor from inventario.config where clave = 'moneda_base'),
+    'paises', coalesce((
+      select jsonb_agg(jsonb_build_object('nombre', x.nombre, 'moneda', x.moneda, 'tasa', x.tasa) order by x.nombre)
+      from inventario.paises x), '[]'),
     'perfiles', coalesce((
       select jsonb_agg(jsonb_build_object('id', p.id, 'nombre', p.nombre, 'usuario', p.usuario, 'rol', p.rol,
                'activo', p.activo, 'creado', p.created_at::date,
@@ -337,7 +366,9 @@ begin
       from inventario.bodegas b where v_admin or b.id = v_maleta), '[]'),
     'productos', coalesce((
       select jsonb_agg(jsonb_build_object('id', x.id, 'codigo', x.codigo, 'nombre', x.nombre, 'unidad', x.unidad,
-               'precio_venta', x.precio_venta, 'stock_minimo', x.stock_minimo, 'activo', x.activo) order by x.nombre)
+               'stock_minimo', x.stock_minimo, 'activo', x.activo,
+               'precios', coalesce((select jsonb_object_agg(r.pais, r.precio) from inventario.precios r where r.producto_id = x.id), '{}'))
+             order by x.nombre)
       from inventario.productos x where v_admin or x.activo), '[]'),
     'proveedores', case when v_admin then coalesce((
       select jsonb_agg(jsonb_build_object('id', v.id, 'nombre', v.nombre, 'contacto', v.contacto) order by v.nombre)
@@ -357,7 +388,7 @@ begin
       from inventario.movimientos m left join inventario.perfiles c on c.id = m.creado_por
       where v_admin or m.origen_id = v_maleta or m.destino_id = v_maleta), '[]'),
     'pagos', coalesce((
-      select jsonb_agg(jsonb_build_object('id', g.id, 'bodega_id', g.bodega_id, 'fecha', g.fecha, 'valor', g.valor,
+      select jsonb_agg(jsonb_build_object('id', g.id, 'bodega_id', g.bodega_id, 'fecha', g.fecha, 'valor', g.valor, 'moneda', g.moneda,
                'metodo_pago_id', g.metodo_pago_id, 'nota', g.nota, 'creado_por', coalesce(c.nombre, '')) order by g.id)
       from inventario.pagos g left join inventario.perfiles c on c.id = g.creado_por
       where v_admin or g.bodega_id = v_maleta), '[]'),
@@ -432,8 +463,25 @@ begin
   return jsonb_build_object('datos', inventario.datos(v_yo));
 end $$;
 
--- Crea o edita productos, bodegas, proveedores y métodos de pago (solo admin). p: un objeto o una lista.
+-- Pone o quita el precio de un producto en un país (0 o vacío = sin precio ahí)
+create or replace function inventario.poner_precio(p_producto uuid, p_pais text, p_precio numeric)
+returns void language plpgsql security definer set search_path = '' as $$
+declare v_pais text := (select nombre from inventario.paises where lower(nombre) = lower(trim(p_pais)));
+begin
+  if v_pais is null then raise exception 'El país «%» no está en Países y monedas.', trim(p_pais); end if;
+  if coalesce(p_precio, 0) < 0 then raise exception 'Precio no válido.'; end if;
+  if coalesce(p_precio, 0) = 0 then
+    delete from inventario.precios where producto_id = p_producto and pais = v_pais;
+  else
+    insert into inventario.precios as r (producto_id, pais, precio) values (p_producto, v_pais, p_precio)
+    on conflict (producto_id, pais) do update set precio = excluded.precio;
+  end if;
+end $$;
+
+-- Crea o edita productos, bodegas, proveedores, métodos de pago, países y precios (solo admin). p: un objeto o una lista.
 -- Con «id» edita; sin «id» crea (productos y bodegas: si ya existe el mismo código / nombre, lo actualiza).
+-- productos: {.., precios: {"Colombia": 60000, "Perú": 60}} · precios (carga de Excel): {codigo, pais, precio}
+-- paises: {id = nombre actual (al editar), nombre, moneda, tasa}
 create or replace function public.inv_guardar(p_tabla text, p jsonb)
 returns jsonb language plpgsql security definer set search_path = '' as $$
 declare
@@ -441,6 +489,10 @@ declare
   v_x  jsonb;
   v_id text;
   v_ids text[] := '{}';
+  v_k  text;
+  v_v  jsonb;
+  v_mon text;
+  v_tasa numeric;
 begin
   if jsonb_typeof(p) = 'object' then p := jsonb_build_array(p); end if;
   for v_x in select * from jsonb_array_elements(p) loop
@@ -454,22 +506,51 @@ begin
         raise exception 'Ya hay un producto con el código %.', trim(v_x->>'codigo');
       end if;
       if v_id is null then
-        insert into inventario.productos (codigo, nombre, unidad, precio_venta, stock_minimo)
+        insert into inventario.productos (codigo, nombre, unidad, stock_minimo)
         values (trim(v_x->>'codigo'), trim(v_x->>'nombre'), coalesce(nullif(trim(v_x->>'unidad'), ''), 'und'),
-                coalesce((v_x->>'precio_venta')::numeric, 0), coalesce((v_x->>'stock_minimo')::numeric, 0))
+                coalesce((v_x->>'stock_minimo')::numeric, 0))
         returning id::text into v_id;
         insert into inventario.producto_costos (producto_id) values (v_id::uuid);
       else
         update inventario.productos set
           codigo = trim(v_x->>'codigo'), nombre = trim(v_x->>'nombre'),
           unidad = coalesce(nullif(trim(v_x->>'unidad'), ''), unidad),
-          precio_venta = coalesce((v_x->>'precio_venta')::numeric, precio_venta),
           stock_minimo = coalesce((v_x->>'stock_minimo')::numeric, stock_minimo),
           activo = coalesce((v_x->>'activo')::boolean, activo)
         where id = v_id::uuid;
       end if;
+      if jsonb_typeof(v_x->'precios') = 'object' then
+        for v_k, v_v in select * from jsonb_each(v_x->'precios') loop
+          perform inventario.poner_precio(v_id::uuid, v_k, nullif(v_v #>> '{}', '')::numeric);
+        end loop;
+      end if;
+
+    elsif p_tabla = 'precios' then
+      select id::text into v_id from inventario.productos where lower(codigo) = lower(trim(v_x->>'codigo'));
+      if v_id is null then raise exception 'No existe el código %.', trim(v_x->>'codigo'); end if;
+      perform inventario.poner_precio(v_id::uuid, v_x->>'pais', nullif(v_x->>'precio', '')::numeric);
+
+    elsif p_tabla = 'paises' then
+      v_mon := upper(trim(coalesce(v_x->>'moneda', '')));
+      v_tasa := case when v_mon = 'COP' then 1 else nullif(v_x->>'tasa', '')::numeric end;
+      if nullif(trim(v_x->>'nombre'), '') is null then raise exception 'Escribe el nombre del país.'; end if;
+      if v_mon !~ '^[A-Z]{3}$' then raise exception 'Elige la moneda.'; end if;
+      if v_tasa is null or v_tasa <= 0 then raise exception 'Escribe cuántos pesos vale 1 %.', v_mon; end if;
+      if exists (select 1 from inventario.paises where lower(nombre) = lower(trim(v_x->>'nombre')) and nombre is distinct from v_id) then
+        raise exception 'Ya existe ese país.';
+      end if;
+      if v_id is null then
+        insert into inventario.paises (nombre, moneda, tasa) values (trim(v_x->>'nombre'), v_mon, v_tasa);
+      else
+        update inventario.paises set nombre = trim(v_x->>'nombre'), moneda = v_mon, tasa = v_tasa where nombre = v_id;
+        if not found then raise exception 'Ese país no existe.'; end if;
+      end if;
+      v_id := trim(v_x->>'nombre');
 
     elsif p_tabla = 'bodegas' then
+      if nullif(trim(v_x->>'pais'), '') is not null and not exists (select 1 from inventario.paises where nombre = trim(v_x->>'pais')) then
+        raise exception 'El país «%» no está en Países y monedas.', trim(v_x->>'pais');
+      end if;
       if v_id is null then
         if nullif(trim(v_x->>'nombre'), '') is null then raise exception 'Escribe el nombre de la bodega.'; end if;
         select id::text into v_id from inventario.bodegas where tipo = 'bodega' and lower(nombre) = lower(trim(v_x->>'nombre'));
@@ -527,17 +608,18 @@ begin
   return jsonb_build_object('ids', to_jsonb(v_ids), 'datos', inventario.datos(v_yo));
 end $$;
 
--- Dinero que entrega un monitor (solo admin)
+-- Dinero que entrega un monitor (solo admin). Va en la moneda del país de su maleta.
 create or replace function public.inv_pago(p jsonb)
 returns jsonb language plpgsql security definer set search_path = '' as $$
-declare v_yo inventario.perfiles := inventario.exigir(array['superadmin','admin']);
+declare
+  v_yo inventario.perfiles := inventario.exigir(array['superadmin','admin']);
+  v_mon text := (select x.moneda from inventario.bodegas b join inventario.paises x on x.nombre = b.pais
+                 where b.id = nullif(p->>'bodega_id', '')::uuid and b.tipo = 'monitor');
 begin
-  if not exists (select 1 from inventario.bodegas where id = nullif(p->>'bodega_id', '')::uuid and tipo = 'monitor') then
-    raise exception 'Elige el monitor.';
-  end if;
+  if v_mon is null then raise exception 'Elige el monitor.'; end if;
   if coalesce(nullif(p->>'valor', '')::numeric, 0) <= 0 then raise exception 'Escribe el valor recibido.'; end if;
-  insert into inventario.pagos (bodega_id, valor, metodo_pago_id, nota, creado_por)
-  values ((p->>'bodega_id')::uuid, (p->>'valor')::numeric, nullif(p->>'metodo_pago_id', '')::smallint,
+  insert into inventario.pagos (bodega_id, valor, moneda, metodo_pago_id, nota, creado_por)
+  values ((p->>'bodega_id')::uuid, (p->>'valor')::numeric, v_mon, nullif(p->>'metodo_pago_id', '')::smallint,
           nullif(trim(p->>'nota'), ''), v_yo.id);
   return jsonb_build_object('datos', inventario.datos(v_yo));
 end $$;
@@ -563,6 +645,9 @@ begin
   if v_yo.rol = 'admin' and v_rol <> 'monitor' then raise exception 'Solo el superadmin crea admins.'; end if;
   if v_user !~ '^[a-z0-9._-]{3,30}$' then raise exception 'Usuario: de 3 a 30 letras o números, sin espacios ni tildes.'; end if;
   if length(v_nom) < 3 then raise exception 'Escribe nombre y apellido.'; end if;
+  if v_rol = 'monitor' and not exists (select 1 from inventario.paises where nombre = trim(coalesce(p->>'pais', ''))) then
+    raise exception 'Elige el país de su maleta.';
+  end if;
   v_mail := v_user || '@jdt.local';
 
   select id into v_uid from auth.users where email = v_mail;
@@ -591,7 +676,7 @@ begin
   insert into inventario.perfiles (id, usuario, nombre, rol) values (v_uid, v_user, v_nom, v_rol);
   if v_rol = 'monitor' then
     insert into inventario.bodegas (nombre, ciudad, pais, tipo, monitor_id)
-    values ('Maleta ' || v_nom, coalesce(trim(p->>'ciudad'), ''), coalesce(trim(p->>'pais'), ''), 'monitor', v_uid);
+    values ('Maleta ' || v_nom, coalesce(trim(p->>'ciudad'), ''), trim(p->>'pais'), 'monitor', v_uid);
   end if;
   return jsonb_build_object('existente', v_ya, 'datos', inventario.datos(v_yo));
 end $$;
@@ -629,9 +714,19 @@ begin
   where id = v_per.id
   returning * into v_per;
 
+  if nullif(trim(p->>'pais'), '') is not null and not exists (select 1 from inventario.paises where nombre = trim(p->>'pais')) then
+    raise exception 'El país «%» no está en Países y monedas.', trim(p->>'pais');
+  end if;
   if v_per.rol = 'monitor' and not exists (select 1 from inventario.bodegas where monitor_id = v_per.id) then
+    if nullif(trim(p->>'pais'), '') is null then raise exception 'Elige el país de su maleta.'; end if;
     insert into inventario.bodegas (nombre, ciudad, pais, tipo, monitor_id)
-    values ('Maleta ' || v_per.nombre, coalesce(trim(p->>'ciudad'), ''), coalesce(trim(p->>'pais'), ''), 'monitor', v_per.id);
+    values ('Maleta ' || v_per.nombre, coalesce(trim(p->>'ciudad'), ''), trim(p->>'pais'), 'monitor', v_per.id);
+  else
+    -- cambia la ciudad o el país de su maleta (sus ventas nuevas van en la moneda del país nuevo)
+    update inventario.bodegas set
+      ciudad = coalesce(nullif(trim(p->>'ciudad'), ''), ciudad),
+      pais   = coalesce(nullif(trim(p->>'pais'), ''), pais)
+    where monitor_id = v_per.id and (nullif(trim(p->>'ciudad'), '') is not null or nullif(trim(p->>'pais'), '') is not null);
   end if;
   -- desactivado: sus sesiones abiertas se cierran
   -- (solo si es solo del inventario: a alguien del call center no se le cierra allá)

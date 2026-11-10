@@ -1,11 +1,12 @@
 ---
-// Cargar datos (admin): productos, bodegas y saldo inicial desde Excel. Se copian las filas de Excel y se pegan,
+// Cargar datos (admin): productos, precios por país, bodegas y saldo inicial desde Excel. Se copian las filas de Excel y se pegan,
 // o se suelta un .csv. Primero se revisa fila por fila y luego se carga lo que esté bien.
 import AppLayout from "../layouts/AppLayout.astro";
 import PageHeader from "../components/ui/PageHeader.astro";
 
 const tipos = [
-  { id: "productos", label: "Productos", cols: ["Código", "Nombre", "Precio de venta", "Mínimo", "Unidad"], ejemplo: "LIB-003\tLibro de lectura\t50000\t20\tund" },
+  { id: "productos", label: "Productos", cols: ["Código", "Nombre", "Mínimo", "Unidad"], ejemplo: "LIB-003\tLibro de lectura\t20\tund" },
+  { id: "precios", label: "Precios", cols: ["País", "Código", "Precio de venta"], ejemplo: "Colombia\tLIB-003\t50000" },
   { id: "bodegas", label: "Bodegas", cols: ["Nombre", "Ciudad", "País"], ejemplo: "Bodega Cali\tCali\tColombia" },
   { id: "saldo", label: "Saldo inicial", cols: ["Bodega", "Código", "Cantidad", "Costo unitario"], ejemplo: "Bodega Bogotá\tLIB-001\t50\t24000" },
 ];
@@ -25,7 +26,9 @@ const tipos = [
           <p class="muted small">
             Columnas en este orden: {t.cols.map((c, j) => <span class="badge">{j + 1}. {c}</span>)}
             {t.id === "saldo" && <span> · Entra como compra a «Saldo inicial» y fija el costo promedio.</span>}
-            {t.id === "productos" && <span> · Si el código ya existe, se actualiza.</span>}
+            {t.id === "productos" && <span> · Si el código ya existe, se actualiza. Los precios van en la pestaña Precios.</span>}
+            {t.id === "precios" && <span> · En la moneda de cada país. El país tiene que estar en Países y monedas.</span>}
+            {t.id === "bodegas" && <span> · El país tiene que estar en Países y monedas.</span>}
           </p>
           <button type="button" class="btn btn-ghost btn-sm" data-plantilla>
             <i class="bi bi-download" aria-hidden="true" />
@@ -94,7 +97,7 @@ const tipos = [
 
 <script>
   import "../lib/ui";
-  import { cargarProductos, cargarBodegas, cargarSaldoInicial, llave, type Revision } from "../lib/store";
+  import { cargarProductos, cargarPrecios, cargarBodegas, cargarSaldoInicial, llave, type Revision } from "../lib/store";
   import { esc, parseNum, descargarCsv } from "../lib/view";
 
   const tipos = JSON.parse(document.querySelector("[data-tipos]")!.textContent!) as { id: string; label: string; cols: string[]; ejemplo: string }[];
@@ -112,7 +115,9 @@ const tipos = [
   const revisar = (id: string, filas: string[][], guardar: boolean): Promise<Revision[]> =>
     id === "productos"
       ? cargarProductos(filas, parseNum, guardar)
-      : id === "bodegas"
+      : id === "precios"
+        ? cargarPrecios(filas, parseNum, guardar)
+        : id === "bodegas"
         ? cargarBodegas(filas, guardar)
         : cargarSaldoInicial(filas, parseNum, guardar);
 

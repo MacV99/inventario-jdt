@@ -113,7 +113,7 @@ import StatCard from "../components/ui/StatCard.astro";
   const delMes = ventas().filter((v) => v.fecha.startsWith(mes));
   const vendido = delMes.reduce((a, v) => a + totalMov(v), 0);
   const ganancia = delMes.reduce((a, v) => a + gananciaMov(v), 0);
-  const debe = cuadre().reduce((a, c) => a + Math.max(0, c.debe), 0);
+  const debe = cuadre().reduce((a, c) => a + Math.max(0, c.debeBase), 0);
   setKpi(kpis, "valor", money(valor), `${num(filas.reduce((a, f) => a + f.cantidad, 0))} und`);
   setKpi(kpis, "vendido", money(vendido), `${delMes.length} ${delMes.length === 1 ? "venta" : "ventas"}`);
   setKpi(kpis, "ganancia", money(ganancia), vendido ? `${Math.round((ganancia / vendido) * 100)}%` : "", ganancia > 0 ? "up" : "flat");

@@ -1,11 +1,20 @@
 // Ayudantes para pintar en el navegador (tablas, menús, formatos). Mismo HTML que los componentes .astro.
 
-const moneyFmt = new Intl.NumberFormat("es-CO", { style: "currency", currency: "COP", maximumFractionDigits: 0 });
 const numFmt = new Intl.NumberFormat("es-CO", { maximumFractionDigits: 2 });
 const dayFmt = new Intl.DateTimeFormat("es-CO", { day: "numeric", month: "short", timeZone: "UTC" });
 const dayYearFmt = new Intl.DateTimeFormat("es-CO", { day: "numeric", month: "short", year: "numeric", timeZone: "UTC" });
 
-export const money = (n: number) => moneyFmt.format(Math.round(n));
+// Plata: pesos sin decimales ("$ 60.000"); otras monedas con su código y hasta 2 decimales ("PEN 60,50")
+const moneyFmts = new Map<string, Intl.NumberFormat>();
+const moneyFmt = (moneda: string) => {
+  let f = moneyFmts.get(moneda);
+  if (!f) {
+    f = new Intl.NumberFormat("es-CO", { style: "currency", currency: moneda, currencyDisplay: moneda === "COP" ? "symbol" : "code", minimumFractionDigits: 0, maximumFractionDigits: moneda === "COP" ? 0 : 2 });
+    moneyFmts.set(moneda, f);
+  }
+  return f;
+};
+export const money = (n: number, moneda = "COP") => moneyFmt(moneda).format(moneda === "COP" ? Math.round(n) : Math.round(n * 100) / 100);
 export const num = (n: number) => numFmt.format(n);
 export const day = (iso: string) => dayFmt.format(new Date(`${iso}T12:00:00Z`)).replace(".", "").replace(" de ", " ");
 export const dayYear = (iso: string) => dayYearFmt.format(new Date(`${iso}T12:00:00Z`)).replace(".", "").replaceAll(" de ", " ");

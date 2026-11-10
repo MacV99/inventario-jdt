@@ -136,10 +136,13 @@ import FormError from "../components/ui/FormError.astro";
 <script>
   import "../lib/ui";
   import { setKpi } from "../lib/ui/kpi";
-  import { stockFilas, maletaDe, producto, cuadre, ventas, registrarMovimiento, metodosPago, yo } from "../lib/store";
+  import { stockFilas, maletaDe, producto, cuadre, ventas, registrarMovimiento, metodosPago, yo, monedaDe, precioEn } from "../lib/store";
   import { money, num, esc, intentar, dsSelect, parseNum, sinNuevo } from "../lib/view";
 
   const maleta = maletaDe(yo().id) ?? { id: "", ciudad: "", pais: "" };
+  // Vende en la moneda de su país, con los precios de su país
+  const { moneda } = monedaDe(maleta);
+  const plata = (n: number) => money(n, moneda);
   const body = document.querySelector<HTMLElement>("[data-body]")!;
   const kpis = document.querySelector<HTMLElement>("[data-kpis]")!;
   const mias = () => stockFilas().filter((f) => f.bodega_id === maleta.id).map((f) => ({ ...f, p: producto(f.producto_id)! }));
@@ -151,14 +154,14 @@ import FormError from "../components/ui/FormError.astro";
         (i) => `<tr>
           <td><span class="strong">${esc(i.p.nombre)}</span><p class="sub">${esc(i.p.codigo)}</p></td>
           <td class="num tnum strong">${num(i.cantidad)}</td>
-          <td class="num tnum">${money(i.p.precio_venta)}</td>
+          <td class="num tnum">${precioEn(i.p.id, maleta.pais) ? plata(precioEn(i.p.id, maleta.pais)) : '<span class="muted">—</span>'}</td>
         </tr>`,
       )
       .join("");
     document.querySelector<HTMLElement>("[data-empty]")!.hidden = items.length > 0;
     const c = cuadre().find((x) => x.bodega.id === maleta.id);
     setKpi(kpis, "unidades", num(c?.unidades ?? 0));
-    setKpi(kpis, "debe", money(c?.debe ?? 0));
+    setKpi(kpis, "debe", plata(c?.debe ?? 0));
     document.querySelector("[data-page-subtitle]")!.textContent = [maleta.ciudad, maleta.pais].filter(Boolean).join(" · ");
     document.querySelector<HTMLButtonElement>("[data-new]")!.disabled = !items.length;
   }
@@ -180,7 +183,7 @@ import FormError from "../components/ui/FormError.astro";
       li.classList.toggle("on", q > 0);
       total += q * parseNum(li.querySelector<HTMLInputElement>("[name=precio]")!.value);
     });
-    totalEl.textContent = money(total);
+    totalEl.textContent = plata(total);
   }
 
   function open() {
@@ -198,7 +201,7 @@ import FormError from "../components/ui/FormError.astro";
             <input class="input tnum" name="cantidad" type="text" inputmode="numeric" value="0" aria-label="Cantidad de ${esc(i.p.nombre)}" />
             <button type="button" class="btn btn-subtle btn-icon btn-sm" data-step="1" aria-label="Uno más"><i class="bi bi-plus-lg" aria-hidden="true"></i></button>
           </span>
-          <label class="price">Precio c/u <input class="input tnum" name="precio" type="text" inputmode="numeric" data-money value="${num(i.p.precio_venta)}" /></label>
+          <label class="price">Precio c/u (${esc(moneda)}) <input class="input tnum" name="precio" type="text" inputmode="decimal" data-money value="${precioEn(i.p.id, maleta.pais) ? num(precioEn(i.p.id, maleta.pais)) : ""}" /></label>
         </li>`,
       )
       .join("");
@@ -235,7 +238,7 @@ import FormError from "../components/ui/FormError.astro";
         metodo_pago_id: Number(metodo.value),
         items,
       });
-      window.ui.toast(`Venta guardada: ${money(items.reduce((a, i) => a + i.cantidad * i.valor_unitario, 0))} (#${mov.id})`, { tone: "success" });
+      window.ui.toast(`Venta guardada: ${plata(items.reduce((a, i) => a + i.cantidad * i.valor_unitario, 0))} (#${mov.id})`, { tone: "success" });
     });
     if (!ok) return;
     window.ui.closeModal("venta-modal");

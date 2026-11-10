@@ -67,11 +67,11 @@ const tipos = Object.entries(TIPO_MOV).map(([value, t]) => ({ value, label: t.la
         <span class="label">Proveedor</span>
         <Select name="proveedor" searchable creatable createLabel="Crear proveedor" placeholder="Elegir proveedor" options={[]} />
       </div>
-      <div class="field" data-show="compra venta">
+      <div class="field" data-show="compra">
         <span class="label">Moneda</span>
-        <Select name="moneda" value="COP" label="Moneda" options={MONEDAS} />
+        <Select name="moneda" value="COP" searchable label="Moneda" options={MONEDAS} />
       </div>
-      <div class="field" data-show="compra venta" data-tasa hidden>
+      <div class="field" data-show="compra" data-tasa hidden>
         <label for="mv-tasa" data-tasa-label>Tasa de cambio</label>
         <input id="mv-tasa" name="tasa" class="input tnum" type="text" inputmode="decimal" data-money placeholder="Ej. 4.000" />
         <span class="hint">Cuántos pesos vale 1 unidad de esa moneda.</span>
@@ -218,7 +218,7 @@ const tipos = Object.entries(TIPO_MOV).map(([value, t]) => ({ value, label: t.la
   import "../lib/ui";
   import { initTableFilter } from "../lib/ui/table-filter";
   import {
-    movimientos, bodegas, productos, proveedores, producto, cantidadEn, costoPromedio, registrarMovimiento, anularMovimiento, totalMov, unidadesMov, TIPO_MOV, REGLAS, MONEDA, type TipoMov, type Movimiento, rutaMov, metodosPago, metodoPago, esVentaOficina,
+    movimientos, bodegas, bodega, productos, proveedores, cantidadEn, costoPromedio, registrarMovimiento, anularMovimiento, totalMov, totalLocal, unidadesMov, TIPO_MOV, REGLAS, MONEDA, type TipoMov, type Movimiento, rutaMov, metodosPago, metodoPago, esVentaOficina, monedaDe, precioEn, tasaDe, producto,
   } from "../lib/store";
   import { money, num, day, dayYear, esc, searchText, menu, dsSelect, intentar, parseNum, urlParam, today, flashRow, sinNuevo, opcionesLugar, type DsSelectEl } from "../lib/view";
 
@@ -234,7 +234,7 @@ const tipos = Object.entries(TIPO_MOV).map(([value, t]) => ({ value, label: t.la
       .map((m) => {
         const t = TIPO_MOV[m.tipo];
         const nombres = m.items.map((i) => producto(i.producto_id)?.nombre);
-        const extra = [esVentaOficina(m) ? "Oficina" : "", m.curso, metodoPago(m.metodo_pago_id)?.nombre, m.moneda !== MONEDA ? `${m.moneda} a ${num(m.tasa)}` : "", m.nota].filter(Boolean).join(" · ");
+        const extra = [esVentaOficina(m) ? "Oficina" : "", m.curso, metodoPago(m.metodo_pago_id)?.nombre, m.moneda !== MONEDA ? `${money(totalLocal(m), m.moneda)} (1 ${m.moneda} = ${money(m.tasa)})` : "", m.nota].filter(Boolean).join(" · ");
         const acciones = [{ value: "ver", label: "Ver detalle", icon: "bi-eye" }, ...(m.anulado ? [] : [{ separator: true }, { value: "anular", label: "Anular", icon: "bi-x-circle", danger: true }])];
         return `<tr data-row data-id="${m.id}" data-tipo="${m.tipo}" data-estado="${m.anulado ? "anulado" : "vigente"}"
             data-ubicacion="${[m.origen_id, m.destino_id].filter(Boolean).join(" ")}" data-text="${esc(searchText(m.id, `#${m.id}`, t.label, m.curso, m.nota, de(m), a(m), ...nombres))}"
@@ -275,6 +275,10 @@ const tipos = Object.entries(TIPO_MOV).map(([value, t]) => ({ value, label: t.la
   const rows = () => [...items.querySelectorAll<HTMLElement>("[data-item]")];
   const t = () => tipo.value as TipoMov;
   const conValor = () => t() === "compra" || t() === "venta";
+  // Moneda del movimiento: la venta va en la del país de donde sale; la compra en la que se elija
+  const lugarVenta = () => bodega(origen.value);
+  const cur = () => (t() === "venta" ? monedaDe(lugarVenta()).moneda : t() === "compra" ? moneda.value || MONEDA : MONEDA);
+  const tasaActual = () => (cur() === MONEDA ? 1 : t() === "venta" ? monedaDe(lugarVenta()).tasa : parseNum(form.querySelector<HTMLInputElement>("[name=tasa]")!.value));
 
   const lugares = (tipos: ("bodega" | "monitor")[] | null) =>
     bodegas()
@@ -300,16 +304,16 @@ const tipos = Object.entries(TIPO_MOV).map(([value, t]) => ({ value, label: t.la
       const v = parseNum(r.querySelector<HTMLInputElement>("[name=valor]")!.value);
       const sub = conValor() ? q * v : 0;
       total += sub;
-      r.querySelector<HTMLElement>("[data-subtotal]")!.textContent = conValor() && sub ? money(sub) : "—";
+      r.querySelector<HTMLElement>("[data-subtotal]")!.textContent = conValor() && sub ? money(sub, cur()) : "—";
     }
-    const tasa = moneda.value !== MONEDA ? parseNum(form.querySelector<HTMLInputElement>("[name=tasa]")!.value) : 1;
-    totalEl.textContent = !conValor() ? "—" : moneda.value !== MONEDA ? `${num(total)} ${moneda.value}${tasa ? ` = ${money(total * tasa)}` : ""}` : money(total);
+    const tasa = tasaActual();
+    totalEl.textContent = !conValor() ? "—" : cur() !== MONEDA ? `${money(total, cur())}${tasa ? ` = ${money(total * tasa)}` : ""}` : money(total);
   }
 
   function sync() {
     const r = REGLAS[t()];
     form.querySelectorAll<HTMLElement>("[data-show]").forEach((f) => (f.hidden = !f.dataset.show!.split(" ").includes(t())));
-    tasaField.hidden = !conValor() || moneda.value === MONEDA;
+    tasaField.hidden = t() !== "compra" || moneda.value === MONEDA;
     form.querySelector("[data-tasa-label]")!.textContent = `Tasa: 1 ${moneda.value} en pesos`;
     // Origen y destino: solo los lugares que acepta el tipo
     const keep = (s: DsSelectEl, opts: { value: string }[]) => {
@@ -318,7 +322,7 @@ const tipos = Object.entries(TIPO_MOV).map(([value, t]) => ({ value, label: t.la
     };
     keep(origen, lugares(r.origen));
     keep(destino, lugares(r.destino));
-    valorLabel.textContent = t() === "venta" ? (moneda.value === MONEDA ? "Precio unit." : `Precio (${moneda.value})`) : t() === "compra" ? (moneda.value === MONEDA ? "Costo unit." : `Costo (${moneda.value})`) : "";
+    valorLabel.textContent = t() === "venta" ? (cur() === MONEDA ? "Precio unit." : `Precio (${cur()})`) : t() === "compra" ? (cur() === MONEDA ? "Costo unit." : `Costo (${cur()})`) : "";
     form.querySelector<HTMLElement>("[data-total-wrap]")!.hidden = !conValor();
     const opts = productOptions();
     rows().forEach((row) => {
@@ -339,10 +343,11 @@ const tipos = Object.entries(TIPO_MOV).map(([value, t]) => ({ value, label: t.la
     const valor = row.querySelector<HTMLInputElement>("[data-valor]")!;
     valor.style.visibility = conValor() ? "" : "hidden";
     valor.placeholder = t() === "venta" ? "Precio c/u" : "Costo c/u";
-    // Venta: el precio de referencia del producto
+    // Venta: el precio del producto en el país de donde sale
     p.addEventListener("change", () => {
       const v = row.querySelector<HTMLInputElement>("[name=valor]")!;
-      if (t() === "venta" && !v.value && moneda.value === MONEDA) v.value = num(producto(p.value)?.precio_venta ?? 0);
+      const precio = precioEn(p.value, lugarVenta()?.pais);
+      if (t() === "venta" && !v.value && precio) v.value = num(precio);
       if (t() === "compra" && !v.value && moneda.value === MONEDA) v.value = costoPromedio().get(p.value) ? num(Math.round(costoPromedio().get(p.value)!)) : "";
       recalc();
       row.querySelector<HTMLInputElement>("[name=cantidad]")!.focus();
@@ -370,7 +375,12 @@ const tipos = Object.entries(TIPO_MOV).map(([value, t]) => ({ value, label: t.la
   }
 
   tipo.addEventListener("change", sync);
-  moneda.addEventListener("change", sync);
+  moneda.addEventListener("change", () => {
+    // Compra en otra moneda: la tasa de esa moneda en Países (se puede cambiar)
+    const tasa = form.querySelector<HTMLInputElement>("[name=tasa]")!;
+    if (moneda.value !== MONEDA) tasa.value = tasaDe(moneda.value) ? num(tasaDe(moneda.value)) : "";
+    sync();
+  });
   origen.addEventListener("change", sync);
   form.addEventListener("input", recalc);
   form.querySelector("[data-add-item]")!.addEventListener("click", () => {
@@ -436,7 +446,7 @@ const tipos = Object.entries(TIPO_MOV).map(([value, t]) => ({ value, label: t.la
       ["Curso", m.curso],
       ["Pago", metodoPago(m.metodo_pago_id)?.nombre],
       ["Moneda", m.moneda !== MONEDA ? `${m.moneda} · 1 ${m.moneda} = ${money(m.tasa)}` : undefined],
-      ["Total", money(totalMov(m))],
+      ["Total", m.moneda !== MONEDA && (m.tipo === "venta" || m.tipo === "compra") ? `${money(totalLocal(m), m.moneda)} = ${money(totalMov(m))}` : money(totalMov(m))],
       ["Hecho por", m.creado_por],
       ["Nota", m.nota],
     ];
@@ -445,11 +455,11 @@ const tipos = Object.entries(TIPO_MOV).map(([value, t]) => ({ value, label: t.la
       .map(([k, v]) => `<dt>${k}</dt><dd>${esc(v)}</dd>`)
       .join("");
     const cv = m.tipo === "compra" || m.tipo === "venta";
-    det.querySelector<HTMLElement>("[data-det-valor]")!.textContent = m.tipo === "venta" ? "Precio unit." : m.tipo === "compra" ? `Costo (${m.moneda})` : "";
+    det.querySelector<HTMLElement>("[data-det-valor]")!.textContent = m.tipo === "venta" ? `Precio (${m.moneda})` : m.tipo === "compra" ? `Costo (${m.moneda})` : "";
     det.querySelector("[data-det-items]")!.innerHTML = m.items
       .map(
         (i) => `<tr><td class="strong">${esc(producto(i.producto_id)?.nombre)}</td><td class="num tnum">${num(i.cantidad)}</td>
-          <td class="num tnum">${cv ? (m.moneda === MONEDA ? money(i.valor_unitario) : num(i.valor_unitario)) : ""}</td><td class="num tnum">${money(i.costo_unitario)}</td></tr>`,
+          <td class="num tnum">${cv ? money(i.valor_unitario, m.moneda) : ""}</td><td class="num tnum">${money(i.costo_unitario)}</td></tr>`,
       )
       .join("");
     det.querySelector<HTMLElement>("[data-det-anular]")!.hidden = m.anulado;

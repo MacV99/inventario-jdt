@@ -1,0 +1,145 @@
+---
+// Países y monedas (admin, German 2026-11-09): cada país vende en su moneda y con sus precios.
+// La tasa (cuántos pesos vale 1 unidad) sirve para sumar todo en pesos en el resumen y los reportes.
+import AppLayout from "../layouts/AppLayout.astro";
+import PageHeader from "../components/ui/PageHeader.astro";
+import Select from "../components/ui/Select.astro";
+import Modal from "../components/ui/Modal.astro";
+import FormError from "../components/ui/FormError.astro";
+import { MONEDAS } from "../lib/store";
+---
+
+<AppLayout title="Países y monedas">
+  <PageHeader title="Países y monedas" subtitle=" ">
+    <button slot="actions" type="button" class="btn btn-primary" data-new><i class="bi bi-plus-lg" aria-hidden="true"></i>Nuevo país</button>
+  </PageHeader>
+
+  <section class="card card-list" data-table>
+    <div class="table-wrap">
+      <table class="table table-cards">
+        <thead>
+          <tr>
+            <th data-sort="text" data-card-title>País</th>
+            <th data-sort="text">Moneda</th>
+            <th class="num" data-sort="num" title="Cuántos pesos vale 1 unidad de su moneda">Vale en pesos</th>
+            <th class="num" data-sort="num">Bodegas y maletas</th>
+            <th class="num" data-sort="num">Productos con precio</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody data-body></tbody>
+      </table>
+    </div>
+    <div class="empty" data-empty hidden>
+      <i class="bi bi-globe-americas" aria-hidden="true"></i>
+      <p class="muted">Aún no hay países.</p>
+    </div>
+  </section>
+
+  <Modal id="pais-modal" title="Nuevo país" description="Las ventas de sus bodegas y monitores quedan en su moneda.">
+    <form class="form-grid" data-form novalidate>
+      <div class="span-2"><FormError /></div>
+      <div class="field">
+        <label for="pa-nombre">País</label>
+        <input id="pa-nombre" name="nombre" class="input" placeholder="Ej. Perú" />
+      </div>
+      <div class="field">
+        <span class="label">Moneda</span>
+        <Select name="moneda" searchable placeholder="Elegir moneda" options={MONEDAS} />
+      </div>
+      <div class="field span-2" data-tasa>
+        <label for="pa-tasa" data-tasa-label>¿Cuántos pesos vale 1?</label>
+        <input id="pa-tasa" name="tasa" class="input tnum" type="text" inputmode="decimal" data-money placeholder="Ej. 1.100" />
+        <span class="hint">Para sumar todo en pesos. Cámbiala cuando cambie el precio de la moneda: las ventas viejas no cambian.</span>
+      </div>
+    </form>
+    <button slot="footer" type="button" class="btn btn-ghost" data-modal-close>Cancelar</button>
+    <button slot="footer" type="button" class="btn btn-primary" data-save>Guardar</button>
+  </Modal>
+</AppLayout>
+
+<script>
+  import "../lib/ui";
+  import { initTableFilter } from "../lib/ui/table-filter";
+  import { paises, pais, bodegas, productos, guardarPais, MONEDA } from "../lib/store";
+  import { money, num, esc, menu, intentar, parseNum, dsSelect, flashRow } from "../lib/view";
+
+  const scope = document.querySelector<HTMLElement>("[data-table]")!;
+  const body = scope.querySelector<HTMLElement>("[data-body]")!;
+  const table = initTableFilter(scope);
+
+  function render() {
+    const ps = paises();
+    body.innerHTML = ps
+      .map((p) => {
+        const lugares = bodegas().filter((b) => b.pais === p.nombre).length;
+        const conPrecio = productos().filter((x) => x.precios[p.nombre]).length;
+        return `<tr data-row data-id="${esc(p.nombre)}">
+          <td class="strong">${esc(p.nombre)}</td>
+          <td>${esc(p.moneda)}</td>
+          <td class="num tnum" data-sort-value="${p.tasa}">${p.moneda === MONEDA ? '<span class="muted">—</span>' : money(p.tasa)}</td>
+          <td class="num tnum">${num(lugares)}</td>
+          <td class="num tnum">${num(conPrecio)}</td>
+          <td class="cell-actions">${menu([{ value: "editar", label: "Editar", icon: "bi-pencil" }])}</td>
+        </tr>`;
+      })
+      .join("");
+    document.querySelector("[data-page-subtitle]")!.textContent = `${ps.length} ${ps.length === 1 ? "país" : "países"} · los precios se ponen en cada producto`;
+    table.rescan();
+  }
+  render();
+
+  const modal = document.getElementById("pais-modal")!;
+  const form = modal.querySelector<HTMLFormElement>("[data-form]")!;
+  const nombre = form.querySelector<HTMLInputElement>("[name=nombre]")!;
+  const tasa = form.querySelector<HTMLInputElement>("[name=tasa]")!;
+  const moneda = dsSelect(form, "ds-select[name=moneda]");
+  const tasaField = form.querySelector<HTMLElement>("[data-tasa]")!;
+  function sync() {
+    tasaField.hidden = !moneda.value || moneda.value === MONEDA;
+    form.querySelector("[data-tasa-label]")!.textContent = `¿Cuántos pesos vale 1 ${moneda.value}?`;
+  }
+  moneda.addEventListener("change", sync);
+
+  let editando = "";
+  function open(id = "") {
+    editando = id;
+    intentar(form, () => {});
+    const p = id ? pais(id) : undefined;
+    modal.querySelector("[data-modal-title]")!.textContent = p ? `Editar ${p.nombre}` : "Nuevo país";
+    nombre.value = p?.nombre ?? "";
+    moneda.value = p?.moneda ?? "";
+    tasa.value = p && p.moneda !== MONEDA ? num(p.tasa) : "";
+    sync();
+    window.ui.openModal("pais-modal");
+    nombre.focus();
+  }
+  document.querySelector("[data-new]")!.addEventListener("click", () => open());
+  modal.querySelector("[data-save]")!.addEventListener("click", async () => {
+    let id = "";
+    const ok = await intentar(
+      form,
+      async () => (id = await guardarPais({ antes: editando || undefined, nombre: nombre.value, moneda: moneda.value, tasa: parseNum(tasa.value) })),
+      editando ? "País actualizado" : "País creado",
+    );
+    if (!ok) return;
+    window.ui.closeModal("pais-modal");
+    render();
+    flashRow(body.querySelector(`tr[data-id="${CSS.escape(id)}"]`));
+  });
+  body.addEventListener("menu-select", (e) => open((e.target as HTMLElement).closest<HTMLElement>("tr[data-id]")!.dataset.id!));
+  body.addEventListener("click", (e) => {
+    const row = (e.target as HTMLElement).closest<HTMLElement>("tr[data-id]");
+    if (row && !(e.target as HTMLElement).closest("ds-menu")) open(row.dataset.id!);
+  });
+</script>
+
+<style>
+  [data-body] :global(tr[data-id]) {
+    cursor: pointer;
+  }
+
+  [data-tasa][hidden] {
+    display: none;
+  }
+</style>

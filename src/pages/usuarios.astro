@@ -64,13 +64,13 @@ import PasswordInput from "../components/ui/PasswordInput.astro";
       </div>
       <div class="field" data-maleta>
         <span class="label">País</span>
-        <Select name="pais" searchable creatable createLabel="Crear país" placeholder="Elegir país" options={[]} />
+        <Select name="pais" searchable placeholder="Elegir país" options={[]} />
       </div>
       <div class="field" data-maleta>
         <span class="label">Ciudad</span>
         <Select name="ciudad" searchable creatable createLabel="Crear ciudad" placeholder="Elegir ciudad" options={[]} />
       </div>
-      <p class="muted small span-2" data-maleta>Se le crea su maleta en esa ciudad.</p>
+      <p class="muted small span-2" data-maleta>Se le crea su maleta en esa ciudad. Vende en la moneda y con los precios de su país.</p>
     </form>
     <button slot="footer" type="button" class="btn btn-ghost" data-modal-close>Cancelar</button>
     <button slot="footer" type="button" class="btn btn-primary" data-save>Crear</button>
@@ -87,13 +87,31 @@ import PasswordInput from "../components/ui/PasswordInput.astro";
     <button slot="footer" type="button" class="btn btn-ghost" data-modal-close>Cancelar</button>
     <button slot="footer" type="button" class="btn btn-primary" data-save>Cambiar</button>
   </Modal>
+
+  <!-- Dónde está la maleta de un monitor (al pasar un admin a monitor o al cambiarlo de ciudad) -->
+  <Modal id="lugar-modal" title="Ciudad de su maleta">
+    <form class="form-grid" data-form novalidate>
+      <div class="span-2"><FormError /></div>
+      <div class="field">
+        <span class="label">País</span>
+        <Select name="pais" searchable placeholder="Elegir país" options={[]} />
+      </div>
+      <div class="field">
+        <span class="label">Ciudad</span>
+        <Select name="ciudad" searchable creatable createLabel="Crear ciudad" placeholder="Elegir ciudad" options={[]} />
+      </div>
+      <p class="muted small span-2">Sus ventas nuevas van en la moneda y con los precios de ese país.</p>
+    </form>
+    <button slot="footer" type="button" class="btn btn-ghost" data-modal-close>Cancelar</button>
+    <button slot="footer" type="button" class="btn btn-primary" data-save>Guardar</button>
+  </Modal>
 </AppLayout>
 
 <script>
   import "../lib/ui";
   import { initTableFilter } from "../lib/ui/table-filter";
-  import { perfiles, bodegas, maletaDe, crearUsuario, cambiarUsuario, yo, ROL, type Perfil } from "../lib/store";
-  import { day, esc, searchText, menu, avatar, intentar, dsSelect, uniqueOptions, flashRow, sinNuevo as texto } from "../lib/view";
+  import { perfiles, bodegas, paises, maletaDe, crearUsuario, cambiarUsuario, yo, ROL, type Perfil } from "../lib/store";
+  import { day, esc, searchText, menu, avatar, intentar, dsSelect, uniqueOptions, flashRow, sinNuevo as texto, type DsSelectEl } from "../lib/view";
 
   const scope = document.querySelector<HTMLElement>("[data-table]")!;
   const body = scope.querySelector<HTMLElement>("[data-body]")!;
@@ -109,6 +127,7 @@ import PasswordInput from "../components/ui/PasswordInput.astro";
       ...(soySuper ? [p.rol === "admin" ? { value: "monitor", label: "Cambiar a monitor", icon: "bi-person" } : { value: "admin", label: "Cambiar a admin", icon: "bi-shield-check" }] : []),
       ...(p.propio ? [{ value: "clave", label: "Cambiar contraseña", icon: "bi-key" }] : []),
       ...(maletaDe(p.id) ? [{ value: "maleta", label: "Ver su maleta", icon: "bi-briefcase" }] : []),
+      ...(p.rol === "monitor" && maletaDe(p.id) ? [{ value: "lugar", label: "Cambiar ciudad o país", icon: "bi-geo-alt" }] : []),
       { separator: true },
       { value: "desactivar", label: "Desactivar", icon: "bi-slash-circle", danger: true },
     ];
@@ -143,10 +162,12 @@ import PasswordInput from "../components/ui/PasswordInput.astro";
   const pais = dsSelect(form, "ds-select[name=pais]");
   const ciudad = dsSelect(form, "ds-select[name=ciudad]");
   form.querySelector<HTMLElement>("[data-rol-field]")!.hidden = !soySuper;
-  const opciones = () => {
-    pais.setOptions(uniqueOptions(bodegas().map((b) => b.pais)));
-    ciudad.setOptions(uniqueOptions(bodegas().filter((b) => !pais.value || b.pais === texto(pais.value)).map((b) => b.ciudad)));
+  // Países: los de Países y monedas. Ciudades: las que ya hay en ese país (o una nueva)
+  const opcionesLugar = (pais: DsSelectEl, ciudad: DsSelectEl) => {
+    pais.setOptions(paises().map((x) => ({ value: x.nombre, label: x.nombre, hint: x.moneda })));
+    ciudad.setOptions(uniqueOptions(bodegas().filter((b) => !pais.value || b.pais === pais.value).map((b) => b.ciudad)));
   };
+  const opciones = () => opcionesLugar(pais, ciudad);
   const verMaleta = () => form.querySelectorAll<HTMLElement>("[data-maleta]").forEach((el) => (el.hidden = rol.value !== "monitor"));
   pais.addEventListener("change", opciones);
   rol.addEventListener("change", verMaleta);
@@ -181,7 +202,7 @@ import PasswordInput from "../components/ui/PasswordInput.astro";
         password: field("password").value,
         rol: rol.value as "admin" | "monitor",
         ciudad: texto(ciudad.value),
-        pais: texto(pais.value),
+        pais: pais.value,
       }));
     });
     if (!ok) return;
@@ -203,11 +224,47 @@ import PasswordInput from "../components/ui/PasswordInput.astro";
     window.ui.closeModal("pass-modal");
   });
 
+  // ── Ciudad y país de la maleta ──
+  const lModal = document.getElementById("lugar-modal")!;
+  const lForm = lModal.querySelector<HTMLFormElement>("[data-form]")!;
+  const lPais = dsSelect(lForm, "ds-select[name=pais]");
+  const lCiudad = dsSelect(lForm, "ds-select[name=ciudad]");
+  lPais.addEventListener("change", () => opcionesLugar(lPais, lCiudad));
+  let lugar: { p: Perfil; aMonitor: boolean } | null = null;
+  function abrirLugar(p: Perfil, aMonitor: boolean) {
+    lugar = { p, aMonitor };
+    intentar(lForm, () => {});
+    const m = maletaDe(p.id);
+    lModal.querySelector("[data-modal-title]")!.textContent = aMonitor ? `${p.nombre} pasa a monitor` : `Maleta de ${p.nombre}`;
+    lPais.value = m?.pais ?? "";
+    opcionesLugar(lPais, lCiudad);
+    lCiudad.value = m?.ciudad ?? "";
+    window.ui.openModal("lugar-modal");
+  }
+  lModal.querySelector("[data-save]")!.addEventListener("click", async () => {
+    if (!lugar) return;
+    const { p, aMonitor } = lugar;
+    const ok = await intentar(
+      lForm,
+      async () => {
+        if (!lPais.value || !lCiudad.value) throw new Error("Elige el país y la ciudad de su maleta.");
+        await cambiarUsuario({ id: p.id, rol: aMonitor ? "monitor" : undefined, pais: lPais.value, ciudad: texto(lCiudad.value) });
+      },
+      aMonitor ? `${p.nombre} ahora es monitor` : "Maleta actualizada",
+    );
+    if (!ok) return;
+    window.ui.closeModal("lugar-modal");
+    render();
+    flashRow(body.querySelector(`tr[data-id="${p.id}"]`));
+  });
+
   body.addEventListener("menu-select", async (e) => {
     const id = (e.target as HTMLElement).closest<HTMLElement>("tr[data-id]")!.dataset.id!;
     const p = perfiles().find((x) => x.id === id)!;
     const { value } = (e as CustomEvent<{ value: string }>).detail;
     if (value === "maleta") return void (location.href = `/inventario?ubicacion=${maletaDe(id)!.id}`);
+    // Pasar a monitor a alguien sin maleta, o cambiar la ciudad de su maleta: se pregunta dónde
+    if (value === "lugar" || (value === "monitor" && !maletaDe(id))) return abrirLugar(p, value === "monitor");
     if (value === "clave") {
       actual = id;
       intentar(pForm, () => {});

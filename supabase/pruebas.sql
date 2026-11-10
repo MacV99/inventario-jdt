@@ -44,8 +44,14 @@ select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-00000000000a
 set role authenticated;
 select t_ok((public.inv_datos()->'yo'->>'rol') = 'superadmin', 'MacV es superadmin');
 select t_ok(jsonb_array_length(public.inv_datos()->'metodos_pago') = 6, 'trae 6 métodos de pago');
+select t_espera_error($q$select public.inv_guardar('bodegas', '{"nombre":"Bodega Lima","ciudad":"Lima","pais":"Perú"}')$q$, 'no está en Países');
+select t_espera_error($q$select public.inv_guardar('paises', '{"nombre":"Perú","moneda":"PEN"}')$q$, 'cuántos pesos');
+select public.inv_guardar('paises', '{"nombre":"Perú","moneda":"PEN","tasa":1100}');
+select t_espera_error($q$select public.inv_guardar('paises', '{"nombre":"perú","moneda":"PEN","tasa":1}')$q$, 'Ya existe ese país');
 select public.inv_guardar('bodegas', '[{"nombre":"Bodega Bogotá","ciudad":"Bogotá","pais":"Colombia"},{"nombre":"Bodega Lima","ciudad":"Lima","pais":"Perú"}]');
-select public.inv_guardar('productos', '[{"codigo":"LIB-001","nombre":"Libro","precio_venta":60000},{"codigo":"KIT-001","nombre":"Kit","precio_venta":120000}]');
+select public.inv_guardar('productos', '[{"codigo":"LIB-001","nombre":"Libro","precios":{"Colombia":60000,"Perú":60}},{"codigo":"KIT-001","nombre":"Kit","precios":{"Colombia":120000}}]');
+select t_ok((select p->'precios' = '{"Colombia": 60000, "Perú": 60}'::jsonb from jsonb_array_elements(public.inv_datos()->'productos') p where p->>'codigo' = 'LIB-001'), 'cada país con su precio');
+select t_espera_error($q$select public.inv_guardar('productos', '{"codigo":"KIT-001","nombre":"Kit","precios":{"Chile":5}}')$q$, 'no está en Países');
 select t_espera_error(format($q$select public.inv_guardar('productos', '{"id":"%s","codigo":"lib-001","nombre":"Kit"}')$q$, (select id from inventario.productos where codigo = 'KIT-001')), 'Ya hay un producto');
 -- mismo código sin id = actualiza (carga desde Excel)
 select public.inv_guardar('productos', '{"codigo":"LIB-001","nombre":"Libro Método JDT"}');
@@ -68,10 +74,11 @@ select t_ok((select cantidad = 20 from inventario.stock), 'stock 20 en Bogotá')
 set role authenticated;
 select public.inv_usuario_crear('{"usuario":"carlos","nombre":"Carlos Rojas","password":"clave-segura","rol":"monitor","ciudad":"Bogotá","pais":"Colombia"}');
 -- jheiner ya existe en el call center: se vincula sin contraseña nueva
-select t_ok((public.inv_usuario_crear('{"usuario":"jheiner","nombre":"Jheiner P","rol":"monitor"}')->>'existente')::boolean, 'usuario del call center se vincula (misma contraseña)');
+select t_espera_error($q$select public.inv_usuario_crear('{"usuario":"jheiner","nombre":"Jheiner P","rol":"monitor"}')$q$, 'país de su maleta');
+select t_ok((public.inv_usuario_crear('{"usuario":"jheiner","nombre":"Jheiner P","rol":"monitor","ciudad":"Lima","pais":"Perú"}')->>'existente')::boolean, 'usuario del call center se vincula (misma contraseña)');
 select t_espera_error($q$select public.inv_usuario_crear('{"usuario":"leidy","nombre":"Leidy","rol":"admin"}')$q$, 'ya está en el inventario');
-select t_espera_error($q$select public.inv_usuario_crear('{"usuario":"Ana María","nombre":"Ana María","password":"12345678","rol":"monitor"}')$q$, 'sin espacios');
-select t_espera_error($q$select public.inv_usuario_crear('{"usuario":"ana","nombre":"Ana Díaz","password":"123","rol":"monitor"}')$q$, 'al menos 8');
+select t_espera_error($q$select public.inv_usuario_crear('{"usuario":"Ana María","nombre":"Ana María","password":"12345678","rol":"monitor","pais":"Colombia"}')$q$, 'sin espacios');
+select t_espera_error($q$select public.inv_usuario_crear('{"usuario":"ana","nombre":"Ana Díaz","password":"123","rol":"monitor","pais":"Colombia"}')$q$, 'al menos 8');
 reset role;
 select t_ok(exists (select 1 from public.profiles where email = 'jheiner@jdt.local'), 'el perfil de jheiner en el call center sigue igual');
 select t_ok((select raw_app_meta_data->>'sistema' = 'inventario' from auth.users where email = 'carlos@jdt.local'), 'carlos queda marcado como del inventario');
@@ -110,6 +117,7 @@ select t_espera_error('select public.inv_anular(1001)', 'No tienes permiso');
 reset role;
 select t_ok(not exists (select 1 from inventario.stock s join inventario.bodegas b on b.id = s.bodega_id where b.tipo = 'monitor'), 'maleta vacía: la fila en 0 se borró');
 select t_ok((select costo_unitario = 25000 from inventario.movimiento_items i join inventario.movimientos m on m.id = i.movimiento_id where m.tipo='venta'), 'la venta guarda el costo del momento');
+select t_ok((select moneda = 'COP' and tasa = 1 from inventario.movimientos where tipo='venta'), 'venta en Colombia va en pesos');
 
 -- 9. Venta en oficina (desde bodega, por un admin)
 select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-00000000000b', false);
@@ -152,6 +160,23 @@ set role authenticated;
 select t_espera_error('select public.inv_datos()', 'No tienes acceso');
 reset role;
 select t_ok(true, 'monitor desactivado ya no entra');
+
+-- 17. Venta en otro país: va en su moneda y con su tasa; el dinero del monitor también
+select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-00000000000a', false);
+set role authenticated;
+select public.inv_registrar(jsonb_build_object('tipo','ajuste_entrada','destino_id',(select id from inventario.bodegas where nombre='Bodega Lima'),
+  'items',jsonb_build_array(jsonb_build_object('producto_id',(select id from inventario.productos where codigo='LIB-001'),'cantidad',4))));
+-- aunque la página mande otra moneda, la venta va en la del país
+select public.inv_registrar(jsonb_build_object('tipo','venta','origen_id',(select id from inventario.bodegas where nombre='Bodega Lima'),'metodo_pago_id',1,
+  'moneda','COP','tasa',1,'items',jsonb_build_array(jsonb_build_object('producto_id',(select id from inventario.productos where codigo='LIB-001'),'cantidad',2,'valor_unitario',60))));
+select public.inv_pago(jsonb_build_object('bodega_id',(select id from inventario.bodegas where nombre='Maleta Jheiner P'),'valor',120));
+select public.inv_guardar('paises', '{"id":"Perú","nombre":"Peru","moneda":"PEN","tasa":1150}');
+select t_espera_error($q$select public.inv_guardar('paises', '{"id":"Colombia","nombre":"Colombia","moneda":"COP","tasa":5}')$q$, 'tasa');
+reset role;
+select t_ok((select moneda = 'PEN' and tasa = 1100 from inventario.movimientos where tipo='venta' and origen_id = (select id from inventario.bodegas where nombre='Bodega Lima')), 'venta en Perú va en soles con su tasa');
+select t_ok((select moneda = 'PEN' from inventario.pagos), 'el dinero del monitor de Perú va en soles');
+select t_ok((select count(*) = 2 from inventario.bodegas where pais = 'Peru') and exists (select 1 from inventario.precios where pais = 'Peru'), 'renombrar el país cambia bodegas y precios');
+select t_ok((select tasa = 1 from inventario.paises where nombre = 'Colombia'), 'el peso siempre vale 1');
 
 -- 15. Nadie entra a las tablas directo
 revoke select on all tables in schema inventario from authenticated;

@@ -26,8 +26,7 @@ import FormError from "../components/ui/FormError.astro";
           <tr>
             <th data-sort="text" data-card-title>Producto</th>
             <th class="num" data-sort="num" title="Se actualiza solo con cada compra">Costo promedio</th>
-            <th class="num" data-sort="num">Precio de venta</th>
-            <th class="num" data-sort="num">Margen</th>
+            <th title="Precio en cada país y cuánto se gana sobre el costo">Precio de venta</th>
             <th class="num" data-sort="num">En existencia</th>
             <th class="num" data-sort="num">Mínimo</th>
             <th></th>
@@ -57,15 +56,16 @@ import FormError from "../components/ui/FormError.astro";
         <label for="pr-unidad">Unidad</label>
         <input id="pr-unidad" name="unidad" class="input" placeholder="und" />
       </div>
-      <div class="field">
-        <label for="pr-precio">Precio de venta</label>
-        <input id="pr-precio" name="precio" class="input tnum" type="text" inputmode="numeric" data-money placeholder="0" />
-      </div>
-      <div class="field">
+      <div class="field span-2">
         <label for="pr-min">Avisar cuando queden menos de</label>
         <input id="pr-min" name="minimo" class="input tnum" type="text" inputmode="numeric" placeholder="0" />
         <span class="hint">En cada bodega.</span>
       </div>
+      <fieldset class="precios span-2">
+        <legend class="label">Precio de venta en cada país</legend>
+        <div class="precios-grid" data-precios></div>
+        <span class="hint">Vacío = no se vende en ese país. Los países se agregan en <a href="/paises">Países y monedas</a>.</span>
+      </fieldset>
     </form>
     <button slot="footer" type="button" class="btn btn-ghost" data-modal-close>Cancelar</button>
     <button slot="footer" type="button" class="btn btn-primary" data-save>Guardar</button>
@@ -120,12 +120,30 @@ import FormError from "../components/ui/FormError.astro";
   [data-body] :global(tr[data-id]) {
     cursor: pointer;
   }
+
+  .precios {
+    margin: 0;
+    padding: 0;
+    border: 0;
+  }
+
+  .precios-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+    gap: var(--space-3);
+    margin: var(--space-2) 0;
+  }
+
+  [data-body] :global(.precio-linea) {
+    display: block;
+    white-space: nowrap;
+  }
 </style>
 
 <script>
   import "../lib/ui";
   import { initTableFilter } from "../lib/ui/table-filter";
-  import { productos, producto, stockFilas, costoPromedio, guardarProducto, setActivo, kardex, bodegas, rutaMov, TIPO_MOV } from "../lib/store";
+  import { productos, producto, stockFilas, costoPromedio, guardarProducto, setActivo, kardex, bodegas, rutaMov, paises, TIPO_MOV } from "../lib/store";
   import { money, num, day, esc, searchText, menu, intentar, parseNum, dsSelect, flashRow, opcionesLugar } from "../lib/view";
 
   const scope = document.querySelector<HTMLElement>("[data-table]")!;
@@ -141,7 +159,14 @@ import FormError from "../components/ui/FormError.astro";
       .map((p) => {
         const costo = costos.get(p.id) ?? 0;
         const total = filas.filter((f) => f.producto_id === p.id).reduce((a, f) => a + f.cantidad, 0);
-        const margen = p.precio_venta ? Math.round(((p.precio_venta - costo) / p.precio_venta) * 100) : 0;
+        // Precio en cada país (en su moneda) y cuánto se gana sobre el costo, pasado a pesos con la tasa del país
+        const precios = paises()
+          .filter((x) => p.precios[x.nombre])
+          .map((x) => {
+            const v = p.precios[x.nombre]!;
+            const margen = costo ? Math.round(((v * x.tasa - costo) / (v * x.tasa)) * 100) : null;
+            return `<span class="precio-linea"><span class="muted">${esc(x.nombre)}</span> <span class="tnum">${money(v, x.moneda)}</span>${margen === null ? "" : ` <span class="muted small" title="Margen">${margen}%</span>`}</span>`;
+          });
         const acciones = [
           { value: "editar", label: "Editar", icon: "bi-pencil" },
           { value: "historial", label: "Ver historial", icon: "bi-clock-history" },
@@ -151,8 +176,7 @@ import FormError from "../components/ui/FormError.astro";
         return `<tr data-row data-id="${p.id}" data-estado="${p.activo ? "activo" : "inactivo"}" data-text="${esc(searchText(p.nombre, p.codigo))}">
           <td><span class="strong">${esc(p.nombre)}</span>${p.activo ? "" : ' <span class="badge">Inactivo</span>'}<p class="sub">${esc(p.codigo || "Sin código")} · ${esc(p.unidad)}</p></td>
           <td class="num tnum" data-sort-value="${costo}">${costo ? money(costo) : '<span class="muted">Sin compras</span>'}</td>
-          <td class="num tnum" data-sort-value="${p.precio_venta}">${money(p.precio_venta)}</td>
-          <td class="num tnum" data-sort-value="${margen}">${costo ? `${margen}%` : "—"}</td>
+          <td>${precios.join("") || '<span class="muted">Sin precio</span>'}</td>
           <td class="num tnum" data-sort-value="${total}">${num(total)}</td>
           <td class="num tnum muted" data-sort-value="${p.stock_minimo}">${num(p.stock_minimo)}</td>
           <td class="cell-actions">${menu(acciones)}</td>
@@ -179,7 +203,15 @@ import FormError from "../components/ui/FormError.astro";
     field("nombre").value = p?.nombre ?? "";
     field("codigo").value = p?.codigo ?? "";
     field("unidad").value = p?.unidad ?? "und";
-    field("precio").value = p ? num(p.precio_venta) : "";
+    const ps = paises();
+    form.querySelector("[data-precios]")!.innerHTML = ps.length
+      ? ps
+          .map(
+            (x, i) => `<div class="field"><label for="pr-precio-${i}">${esc(x.nombre)} <span class="muted">(${esc(x.moneda)})</span></label>
+              <input id="pr-precio-${i}" class="input tnum" type="text" inputmode="decimal" data-money data-pais="${esc(x.nombre)}" placeholder="—" value="${p?.precios[x.nombre] ? num(p.precios[x.nombre]!) : ""}" /></div>`,
+          )
+          .join("")
+      : '<p class="muted small">Aún no hay países.</p>';
     field("minimo").value = p ? String(p.stock_minimo) : "";
     window.ui.openModal("prod-modal");
     field("nombre").focus();
@@ -195,7 +227,7 @@ import FormError from "../components/ui/FormError.astro";
           nombre: field("nombre").value,
           codigo: field("codigo").value,
           unidad: field("unidad").value.trim() || "und",
-          precio_venta: parseNum(field("precio").value),
+          precios: Object.fromEntries([...form.querySelectorAll<HTMLInputElement>("[data-pais]")].map((x) => [x.dataset.pais!, parseNum(x.value)])),
           stock_minimo: parseNum(field("minimo").value),
         })),
       editando ? "Producto actualizado" : "Producto creado",

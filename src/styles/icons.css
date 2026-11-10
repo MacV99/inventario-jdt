@@ -60,6 +60,8 @@
 .bi-eye::before { content: "\f341"; }
 .bi-eye-slash::before { content: "\f340"; }
 .bi-file-earmark-spreadsheet::before { content: "\f389"; }
+.bi-geo-alt::before { content: "\f3e8"; }
+.bi-globe-americas::before { content: "\f882"; }
 .bi-info-circle::before { content: "\f431"; }
 .bi-key::before { content: "\f44f"; }
 .bi-layout-sidebar::before { content: "\f45f"; }

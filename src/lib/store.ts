@@ -16,7 +16,10 @@ export type TipoBodega = "bodega" | "monitor";
 /** propio = se creó en el inventario (su contraseña se cambia aquí; la de alguien del call center se cambia allá). */
 export interface Perfil { id: string; nombre: string; usuario: string; rol: Rol; activo: boolean; creado: string; propio: boolean }
 export interface Bodega { id: string; nombre: string; ciudad: string; pais: string; tipo: TipoBodega; monitor_id?: string | null; activa: boolean }
-export interface Producto { id: string; codigo: string; nombre: string; unidad: string; precio_venta: number; stock_minimo: number; activo: boolean }
+/** precios: país → precio de venta en la moneda de ese país (sin precio = no está). */
+export interface Producto { id: string; codigo: string; nombre: string; unidad: string; precios: Record<string, number>; stock_minimo: number; activo: boolean }
+/** Cada país vende en su moneda. tasa = cuántos pesos vale 1 unidad (para sumar todo en pesos). */
+export interface Pais { nombre: string; moneda: string; tasa: number }
 export interface Proveedor { id: string; nombre: string; contacto: string }
 export interface MetodoPago { id: number; nombre: string; activo: boolean }
 export interface Item { producto_id: string; cantidad: number; valor_unitario: number; costo_unitario: number }
@@ -37,12 +40,13 @@ export interface Movimiento {
   items: Item[];
 }
 /** Dinero que un monitor entrega de sus ventas. */
-export interface Pago { id: number; bodega_id: string; fecha: string; valor: number; metodo_pago_id?: number | null; nota?: string | null; creado_por: string }
+export interface Pago { id: number; bodega_id: string; fecha: string; valor: number; moneda: string; metodo_pago_id?: number | null; nota?: string | null; creado_por: string }
 export interface Yo { id: string; nombre: string; usuario: string; rol: Rol }
 
 interface State {
   version: number;
   yo: Yo;
+  paises: Pais[];
   perfiles: Perfil[];
   bodegas: Bodega[];
   productos: Producto[];
@@ -56,10 +60,27 @@ interface State {
 }
 
 export const MONEDA = "COP";
+/** Monedas para elegir en Países y en las compras. */
 export const MONEDAS = [
-  { value: "COP", label: "COP · Peso colombiano" },
-  { value: "USD", label: "USD · Dólar" },
-];
+  ["COP", "Peso colombiano"],
+  ["USD", "Dólar"],
+  ["EUR", "Euro"],
+  ["PEN", "Sol peruano"],
+  ["MXN", "Peso mexicano"],
+  ["CLP", "Peso chileno"],
+  ["ARS", "Peso argentino"],
+  ["BRL", "Real brasileño"],
+  ["BOB", "Boliviano"],
+  ["CRC", "Colón costarricense"],
+  ["DOP", "Peso dominicano"],
+  ["GTQ", "Quetzal"],
+  ["HNL", "Lempira"],
+  ["NIO", "Córdoba"],
+  ["PAB", "Balboa"],
+  ["PYG", "Guaraní"],
+  ["UYU", "Peso uruguayo"],
+  ["VES", "Bolívar"],
+].map(([value, nombre]) => ({ value: value!, label: `${value} · ${nombre}` }));
 
 export const TIPO_MOV: Record<TipoMov, { label: string; icon: string; desde: string; hacia: string }> = {
   compra: { label: "Compra", icon: "bi-bag-plus", desde: "Proveedor", hacia: "Bodega" },
@@ -91,7 +112,7 @@ export const ROL: Record<Rol, { label: string }> = {
 const KEY_DEMO = "jdt-inventario-demo";
 const KEY_CACHE = "jdt-inv-datos";
 const KEY_VER = "jdt-inv-ver-como";
-const VERSION = 2;
+const VERSION = 3;
 const hoy = () => new Date().toLocaleDateString("en-CA"); // AAAA-MM-DD en la hora local
 
 /** Prueba local sin sesión: datos de ejemplo (también en una copia armada con PUBLIC_DEMO=1). En la página publicada nunca. */
@@ -206,6 +227,15 @@ export const bodegas = () => load().bodegas;
 export const productos = () => load().productos;
 export const proveedores = () => load().proveedores;
 export const metodosPago = () => load().metodos_pago;
+export const paises = () => load().paises;
+export const pais = (nombre?: string | null) => load().paises.find((p) => p.nombre === nombre);
+/** Moneda y tasa de un lugar (las de su país). Sin país conocido: pesos. */
+export const monedaDe = (b?: { pais: string } | null) => {
+  const p = pais(b?.pais);
+  return { moneda: p?.moneda ?? MONEDA, tasa: p?.tasa ?? 1 };
+};
+/** Precio de venta de un producto en un país (0 = sin precio ahí). */
+export const precioEn = (productoId: string, paisNombre?: string | null) => (paisNombre && producto(productoId)?.precios[paisNombre]) || 0;
 /** Del más nuevo al más viejo (se agregan en orden, así que basta invertir). */
 export const movimientos = () => load().movimientos.slice().reverse();
 export const pagos = () => [...load().pagos].sort((a, b) => b.id - a.id);
@@ -334,28 +364,44 @@ export function rutaMov(m: Movimiento) {
 export const totalMov = (m: Movimiento) =>
   m.items.reduce((a, i) => a + i.cantidad * (m.tipo === "venta" || m.tipo === "compra" ? i.valor_unitario * m.tasa : i.costo_unitario), 0);
 export const unidadesMov = (m: Movimiento) => m.items.reduce((a, i) => a + i.cantidad, 0);
+/** Valor cobrado o pagado en la moneda del movimiento (ventas y compras). */
+export const totalLocal = (m: Movimiento) => m.items.reduce((a, i) => a + i.cantidad * i.valor_unitario, 0);
 export const gananciaMov = (m: Movimiento) => m.items.reduce((a, i) => a + i.cantidad * (i.valor_unitario * m.tasa - i.costo_unitario), 0);
 export const ventas = () => movimientos().filter((m) => m.tipo === "venta" && !m.anulado);
 
-/** Cuadre por monitor: lo que tiene, lo vendido y el dinero por entregar. */
+/** Pesos que vale 1 unidad de una moneda (la tasa del primer país que la usa). */
+export const tasaDe = (moneda: string) => (moneda === MONEDA ? 1 : load().paises.find((x) => x.moneda === moneda)?.tasa ?? 0);
+
+/**
+ * Cuadre por monitor: lo que tiene, lo vendido y el dinero por entregar, en la moneda de su país
+ * (vendido, entregado, debe). Para sumar monitores de varios países: vendidoBase y debeBase en pesos.
+ */
 export function cuadre() {
   const filas = stockFilas();
   const vs = ventas();
   return load()
     .bodegas.filter((b) => b.tipo === "monitor")
     .map((b) => {
+      const { moneda, tasa } = monedaDe(b);
       const s = filas.filter((f) => f.bodega_id === b.id);
       const mias = vs.filter((v) => v.origen_id === b.id);
-      const vendido = mias.reduce((a, v) => a + totalMov(v), 0);
-      const entregado = load().pagos.filter((p) => p.bodega_id === b.id).reduce((a, p) => a + p.valor, 0);
+      // Si algo quedó en otra moneda (le cambiaron el país), se pasa a la de ahora
+      const vendido = mias.reduce((a, v) => a + (v.moneda === moneda ? totalLocal(v) : totalMov(v) / tasa), 0);
+      const entregado = load()
+        .pagos.filter((p) => p.bodega_id === b.id)
+        .reduce((a, p) => a + (p.moneda === moneda ? p.valor : (p.valor * (tasaDe(p.moneda) || 1)) / tasa), 0);
+      const debe = vendido - entregado;
       return {
         bodega: b,
+        moneda,
         unidades: s.reduce((a, x) => a + x.cantidad, 0),
         valor: s.reduce((a, x) => a + x.valor, 0),
         vendidas: mias.reduce((a, v) => a + unidadesMov(v), 0),
         vendido,
         entregado,
-        debe: vendido - entregado,
+        debe,
+        vendidoBase: mias.reduce((a, v) => a + totalMov(v), 0),
+        debeBase: debe * tasa,
       };
     });
 }
@@ -425,7 +471,10 @@ function registrarLocal(input: NuevoMovimiento, state: State): Movimiento {
   }
   if (input.tipo === "compra" && !proveedorId) throw new Error("Elige el proveedor.");
   if (input.tipo === "venta" && !state.metodos_pago.some((m) => m.id === input.metodo_pago_id && m.activo)) throw new Error("Elige cómo pagó el cliente.");
-  const tasa = input.moneda && input.moneda !== MONEDA ? Number(input.tasa) : 1;
+  // La venta va en la moneda del país de donde sale; la compra en la que se pagó; lo demás no lleva plata
+  const enPais = state.paises.find((x) => x.nombre === o?.pais);
+  const moneda = input.tipo === "venta" ? enPais?.moneda ?? MONEDA : input.tipo === "compra" ? input.moneda || MONEDA : MONEDA;
+  const tasa = moneda === MONEDA ? 1 : input.tipo === "venta" ? enPais?.tasa ?? 0 : Number(input.tasa);
   if (!(tasa > 0)) throw new Error("Escribe la tasa de cambio.");
 
   const items = input.items.filter((i) => i.producto_id && i.cantidad > 0);
@@ -454,7 +503,7 @@ function registrarLocal(input: NuevoMovimiento, state: State): Movimiento {
     proveedor_id: input.tipo === "compra" ? proveedorId : undefined,
     metodo_pago_id: input.tipo === "venta" ? input.metodo_pago_id : undefined,
     curso: input.tipo === "venta" ? input.curso?.trim() || undefined : undefined,
-    moneda: input.moneda || MONEDA,
+    moneda,
     tasa,
     nota: input.nota?.trim() || undefined,
     anulado: false,
@@ -511,11 +560,22 @@ export async function guardarConteo(bodegaId: string, conteo: { producto_id: str
 
 const nuevoId = (prefijo: string, xs: { id: string }[]) => `${prefijo}${Math.max(0, ...xs.map((x) => Number(x.id.slice(prefijo.length)) || 0)) + 1}`;
 
-type TablaGuardable = "productos" | "bodegas" | "proveedores" | "metodos_pago";
+type TablaGuardable = "productos" | "bodegas" | "proveedores" | "metodos_pago" | "paises" | "precios";
 /** Crea o edita en la base (uno o varios). Devuelve los ids. */
 const guardarBase = async (tabla: TablaGuardable, p: unknown) => (await llamar("inv_guardar", { p_tabla: tabla, p })).ids!.map(String);
 
-type ProductoIn = Omit<Producto, "id" | "activo"> & { id?: string };
+/** precios: solo los países que cambian (0 = quitar el precio). */
+type ProductoIn = Omit<Producto, "id" | "activo" | "precios"> & { id?: string; precios?: Record<string, number> };
+function preciosLocal(old: Record<string, number>, nuevos: Record<string, number> = {}) {
+  const r = { ...old };
+  for (const [p, v] of Object.entries(nuevos)) {
+    const real = load().paises.find((x) => llave(x.nombre) === llave(p))?.nombre;
+    if (!real) throw new Error(`El país «${p}» no está en Países y monedas.`);
+    if (v > 0) r[real] = v;
+    else delete r[real];
+  }
+  return r;
+}
 function productoLocal(p: ProductoIn) {
   const s = load();
   if (!p.nombre.trim()) throw new Error("Escribe el nombre del producto.");
@@ -523,8 +583,9 @@ function productoLocal(p: ProductoIn) {
   const old = s.productos.find((x) => x.id === p.id) ?? (p.id ? undefined : s.productos.find((x) => llave(x.codigo) === llave(p.codigo)));
   if (s.productos.some((x) => llave(x.codigo) === llave(p.codigo) && x.id !== old?.id)) throw new Error(`Ya hay un producto con el código ${p.codigo.trim()}.`);
   const id = old?.id ?? nuevoId("p", s.productos);
-  if (old) Object.assign(old, { ...p, id, nombre: p.nombre.trim(), codigo: p.codigo.trim() });
-  else s.productos.push({ ...p, id, nombre: p.nombre.trim(), codigo: p.codigo.trim(), activo: true });
+  const precios = preciosLocal(old?.precios ?? {}, p.precios);
+  if (old) Object.assign(old, { ...p, id, nombre: p.nombre.trim(), codigo: p.codigo.trim(), precios });
+  else s.productos.push({ ...p, id, nombre: p.nombre.trim(), codigo: p.codigo.trim(), precios, activo: true });
   return id;
 }
 
@@ -541,6 +602,7 @@ function bodegaLocal(b: BodegaIn) {
   if (!b.nombre.trim()) throw new Error("Escribe el nombre de la bodega.");
   const old = s.bodegas.find((x) => x.id === b.id) ?? (b.id ? undefined : s.bodegas.find((x) => x.tipo === "bodega" && llave(x.nombre) === llave(b.nombre)));
   if (!old && (!b.ciudad.trim() || !b.pais.trim())) throw new Error("Elige la ciudad y el país.");
+  if (b.pais.trim() && !pais(b.pais.trim())) throw new Error(`El país «${b.pais.trim()}» no está en Países y monedas.`);
   const id = old?.id ?? nuevoId("b", s.bodegas.filter((x) => x.tipo === "bodega"));
   if (old) Object.assign(old, { nombre: b.nombre.trim(), ciudad: b.ciudad.trim() || old.ciudad, pais: b.pais.trim() || old.pais });
   else s.bodegas.push({ id, nombre: b.nombre.trim(), ciudad: b.ciudad.trim(), pais: b.pais.trim(), tipo: "bodega", activa: true });
@@ -568,6 +630,35 @@ export async function guardarProveedor(p: { id?: string; nombre: string; contact
   else s.proveedores.push((old = { id: nuevoId("v", s.proveedores), nombre, contacto: p.contacto.trim() }));
   saveDemo();
   return old;
+}
+
+/** Países: crear o editar (nombre, moneda y cuántos pesos vale 1 unidad). `antes` = nombre actual al editar. */
+export async function guardarPais(x: { antes?: string; nombre: string; moneda: string; tasa: number }) {
+  const nombre = x.nombre.trim();
+  const tasa = x.moneda === MONEDA ? 1 : x.tasa;
+  if (!DEMO) return (await guardarBase("paises", { id: x.antes, nombre, moneda: x.moneda, tasa }))[0]!;
+  const s = load();
+  if (!nombre) throw new Error("Escribe el nombre del país.");
+  if (!x.moneda) throw new Error("Elige la moneda.");
+  if (!(tasa > 0)) throw new Error(`Escribe cuántos pesos vale 1 ${x.moneda}.`);
+  if (s.paises.some((p) => llave(p.nombre) === llave(nombre) && p.nombre !== x.antes)) throw new Error("Ya existe ese país.");
+  const old = s.paises.find((p) => p.nombre === x.antes);
+  if (old) {
+    // El nombre nuevo pasa a sus bodegas, maletas y precios
+    if (old.nombre !== nombre) {
+      s.bodegas.forEach((b) => b.pais === old.nombre && (b.pais = nombre));
+      s.productos.forEach((p) => {
+        if (old.nombre in p.precios) {
+          p.precios[nombre] = p.precios[old.nombre]!;
+          delete p.precios[old.nombre];
+        }
+      });
+    }
+    Object.assign(old, { nombre, moneda: x.moneda, tasa });
+  } else s.paises.push({ nombre, moneda: x.moneda, tasa });
+  s.paises.sort((a, b) => a.nombre.localeCompare(b.nombre, "es"));
+  saveDemo();
+  return nombre;
 }
 
 /** Métodos de pago: crear, renombrar o activar/desactivar. */
@@ -611,6 +702,7 @@ export async function crearUsuario(u: NuevoUsuario): Promise<{ existente: boolea
   if (s.perfiles.some((p) => p.usuario === usuario)) throw new Error("Ese usuario ya está en el inventario.");
   if (u.password.length < 8) throw new Error("La contraseña debe tener al menos 8 caracteres.");
   if (yo().rol === "admin" && u.rol !== "monitor") throw new Error("Solo el superadmin crea admins.");
+  if (u.rol === "monitor" && !pais(u.pais)) throw new Error("Elige el país de su maleta.");
   const p: Perfil = { id: nuevoId("u", s.perfiles), nombre: u.nombre.trim(), usuario, rol: u.rol, activo: true, creado: hoy(), propio: true };
   s.perfiles.push(p);
   if (u.rol === "monitor") s.bodegas.push({ id: nuevoId("m", s.bodegas.filter((x) => x.tipo === "monitor")), nombre: `Maleta ${p.nombre}`, ciudad: u.ciudad ?? "", pais: u.pais ?? "", tipo: "monitor", monitor_id: p.id, activa: true });
@@ -632,8 +724,13 @@ export async function cambiarUsuario(c: { id: string; rol?: "admin" | "monitor";
   if (c.rol) p.rol = c.rol;
   if (c.nombre?.trim()) p.nombre = c.nombre.trim();
   if (c.activo !== undefined) p.activo = c.activo;
-  if (p.rol === "monitor" && !s.bodegas.some((b) => b.monitor_id === p.id))
-    s.bodegas.push({ id: nuevoId("m", s.bodegas.filter((x) => x.tipo === "monitor")), nombre: `Maleta ${p.nombre}`, ciudad: c.ciudad ?? "", pais: c.pais ?? "", tipo: "monitor", monitor_id: p.id, activa: true });
+  if (c.pais && !pais(c.pais)) throw new Error(`El país «${c.pais}» no está en Países y monedas.`);
+  const maleta = s.bodegas.find((b) => b.monitor_id === p.id);
+  if (maleta) Object.assign(maleta, { ciudad: c.ciudad || maleta.ciudad, pais: c.pais || maleta.pais });
+  else if (p.rol === "monitor") {
+    if (!c.pais) throw new Error("Elige el país de su maleta.");
+    s.bodegas.push({ id: nuevoId("m", s.bodegas.filter((x) => x.tipo === "monitor")), nombre: `Maleta ${p.nombre}`, ciudad: c.ciudad ?? "", pais: c.pais, tipo: "monitor", monitor_id: p.id, activa: true });
+  }
   saveDemo();
 }
 
@@ -641,7 +738,7 @@ export async function registrarPago(bodegaId: string, valor: number, nota: strin
   if (!(valor > 0)) throw new Error("Escribe el valor recibido.");
   if (!DEMO) return void (await llamar("inv_pago", { p: { bodega_id: bodegaId, valor, nota, metodo_pago_id } }));
   const s = load();
-  s.pagos.push({ id: Math.max(0, ...s.pagos.map((p) => p.id)) + 1, bodega_id: bodegaId, fecha: hoy(), valor, metodo_pago_id, nota: nota.trim() || undefined, creado_por: yo().nombre });
+  s.pagos.push({ id: Math.max(0, ...s.pagos.map((p) => p.id)) + 1, bodega_id: bodegaId, fecha: hoy(), valor, moneda: monedaDe(bodega(bodegaId)).moneda, metodo_pago_id, nota: nota.trim() || undefined, creado_por: yo().nombre });
   saveDemo();
 }
 
@@ -655,21 +752,53 @@ export async function cargarProductos(filas: string[][], num: (s: string) => num
   const vistos = new Set<string>();
   const lote: ProductoIn[] = [];
   const revisadas = filas.map((f, i) => {
-    const [codigo = "", nombre = "", precio = "", minimo = "", unidad = ""] = f.map((x) => x.trim());
-    const r = { fila: i + 1, datos: [codigo, nombre, precio, minimo, unidad || "und"] };
+    const [codigo = "", nombre = "", minimo = "", unidad = ""] = f.map((x) => x.trim());
+    const r = { fila: i + 1, datos: [codigo, nombre, minimo, unidad || "und"] };
     if (!nombre) return { ...r, ok: false, estado: "Falta el nombre" };
     if (!codigo) return { ...r, ok: false, estado: "Falta el código" };
     if (vistos.has(llave(codigo))) return { ...r, ok: false, estado: "Código repetido en la lista" };
     vistos.add(llave(codigo));
-    if (precio && !(num(precio) >= 0)) return { ...r, ok: false, estado: "Precio no válido" };
+    if (minimo && !(num(minimo) >= 0)) return { ...r, ok: false, estado: "Mínimo no válido" };
     const old = load().productos.find((p) => llave(p.codigo) === llave(codigo));
-    lote.push({ id: old?.id, codigo, nombre, unidad: unidad || old?.unidad || "und", precio_venta: precio ? num(precio) : old?.precio_venta ?? 0, stock_minimo: minimo ? num(minimo) : old?.stock_minimo ?? 0 });
+    lote.push({ id: old?.id, codigo, nombre, unidad: unidad || old?.unidad || "und", stock_minimo: minimo ? num(minimo) : old?.stock_minimo ?? 0 });
     return { ...r, ok: true, estado: old ? "Actualiza" : "Nuevo" };
   });
   if (guardar && lote.length) {
     if (!DEMO) await guardarBase("productos", lote);
     else {
       lote.forEach(productoLocal);
+      saveDemo();
+    }
+  }
+  return revisadas;
+}
+
+/** Precios por país: País, Código, Precio (en la moneda del país). */
+export async function cargarPrecios(filas: string[][], num: (s: string) => number, guardar = false): Promise<Revision[]> {
+  const s = load();
+  const vistos = new Set<string>();
+  const lote: { codigo: string; pais: string; precio: number }[] = [];
+  const revisadas = filas.map((f, i) => {
+    const [paisTxt = "", codigo = "", precio = ""] = f.map((x) => x.trim());
+    const r = { fila: i + 1, datos: [paisTxt, codigo, precio] };
+    const p = s.paises.find((x) => llave(x.nombre) === llave(paisTxt));
+    const prod = s.productos.find((x) => llave(x.codigo) === llave(codigo));
+    if (!p) return { ...r, ok: false, estado: "Ese país no está en Países y monedas" };
+    if (!prod) return { ...r, ok: false, estado: "No existe ese código" };
+    const v = num(precio);
+    if (!(v > 0)) return { ...r, ok: false, estado: "Precio no válido" };
+    if (vistos.has(`${p.nombre}|${prod.id}`)) return { ...r, ok: false, estado: "Repetido en la lista" };
+    vistos.add(`${p.nombre}|${prod.id}`);
+    lote.push({ codigo: prod.codigo, pais: p.nombre, precio: v });
+    return { ...r, ok: true, estado: prod.precios[p.nombre] ? `Cambia (${p.moneda})` : `Nuevo (${p.moneda})` };
+  });
+  if (guardar && lote.length) {
+    if (!DEMO) await guardarBase("precios", lote);
+    else {
+      for (const x of lote) {
+        const prod = s.productos.find((p) => p.codigo === x.codigo)!;
+        prod.precios = preciosLocal(prod.precios, { [x.pais]: x.precio });
+      }
       saveDemo();
     }
   }
@@ -740,6 +869,11 @@ function seed(): State {
   const s: State = {
     version: VERSION,
     yo: { id: "u1", nombre: "German", usuario: "german", rol: "admin" },
+    paises: [
+      { nombre: "Colombia", moneda: "COP", tasa: 1 },
+      { nombre: "México", moneda: "MXN", tasa: 215 },
+      { nombre: "Perú", moneda: "PEN", tasa: 1100 },
+    ],
     perfiles: [
       { id: "u0", nombre: "MacV", usuario: "macv", rol: "superadmin", activo: true, creado: "2026-10-01", propio: false },
       { id: "u1", nombre: "German", usuario: "german", rol: "admin", activo: true, creado: "2026-10-01", propio: true },
@@ -758,11 +892,11 @@ function seed(): State {
       { id: "m3", nombre: "Maleta Luis Pérez", ciudad: "Medellín", pais: "Colombia", tipo: "monitor", monitor_id: "u5", activa: true },
     ],
     productos: [
-      { id: "p1", codigo: "LIB-001", nombre: "Libro Método JDT", unidad: "und", precio_venta: 60000, stock_minimo: 30, activo: true },
-      { id: "p2", codigo: "LIB-002", nombre: "Cuaderno de ejercicios", unidad: "und", precio_venta: 35000, stock_minimo: 30, activo: true },
-      { id: "p3", codigo: "KIT-001", nombre: "Kit de práctica", unidad: "und", precio_venta: 120000, stock_minimo: 10, activo: true },
-      { id: "p4", codigo: "USB-001", nombre: "Memoria USB con audios", unidad: "und", precio_venta: 45000, stock_minimo: 20, activo: true },
-      { id: "p5", codigo: "CAM-001", nombre: "Camiseta JDT", unidad: "und", precio_venta: 40000, stock_minimo: 15, activo: true },
+      { id: "p1", codigo: "LIB-001", nombre: "Libro Método JDT", unidad: "und", precios: { Colombia: 60000, Perú: 60, México: 300 }, stock_minimo: 30, activo: true },
+      { id: "p2", codigo: "LIB-002", nombre: "Cuaderno de ejercicios", unidad: "und", precios: { Colombia: 35000, Perú: 35, México: 180 }, stock_minimo: 30, activo: true },
+      { id: "p3", codigo: "KIT-001", nombre: "Kit de práctica", unidad: "und", precios: { Colombia: 120000, Perú: 120 }, stock_minimo: 10, activo: true },
+      { id: "p4", codigo: "USB-001", nombre: "Memoria USB con audios", unidad: "und", precios: { Colombia: 45000 }, stock_minimo: 20, activo: true },
+      { id: "p5", codigo: "CAM-001", nombre: "Camiseta JDT", unidad: "und", precios: { Colombia: 40000, Perú: 40 }, stock_minimo: 15, activo: true },
     ],
     proveedores: [
       { id: "v1", nombre: "Editorial Andina", contacto: "ventas@andina.co · 310 555 1234" },
@@ -806,8 +940,9 @@ function seed(): State {
   s.yo = { id: "u3", nombre: "Carlos Rojas", usuario: "carlos", rol: "monitor" };
   registrarLocal({ tipo: "venta", fecha: "2026-11-07", origen_id: "m1", metodo_pago_id: 2, curso: "Bogotá · 7–8 nov", items: [it("p1", 3, 60000), it("p2", 2, 35000)] }, s);
   s.yo = { id: "u4", nombre: "Andrea Gómez", usuario: "andrea", rol: "monitor" };
-  registrarLocal({ tipo: "venta", fecha: "2026-11-07", origen_id: "m2", metodo_pago_id: 1, curso: "Lima · 7–8 nov", items: [it("p1", 4, 60000)] }, s);
+  registrarLocal({ tipo: "venta", fecha: "2026-11-07", origen_id: "m2", metodo_pago_id: 1, curso: "Lima · 7–8 nov", items: [it("p1", 4, 60)] }, s);
   s.yo = { id: "u1", nombre: "German", usuario: "german", rol: "admin" };
-  s.pagos.push({ id: 1, bodega_id: "m3", fecha: "2026-10-27", valor: 400000, metodo_pago_id: 4, nota: "Transferencia", creado_por: "Leidy" });
+  s.pagos.push({ id: 1, bodega_id: "m3", fecha: "2026-10-27", valor: 400000, moneda: "COP", metodo_pago_id: 4, nota: "Transferencia", creado_por: "Leidy" });
+  s.pagos.push({ id: 2, bodega_id: "m2", fecha: "2026-11-08", valor: 150, moneda: "PEN", metodo_pago_id: 1, creado_por: "Leidy" });
   return s;
 }

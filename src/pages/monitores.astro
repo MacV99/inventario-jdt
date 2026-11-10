@@ -14,8 +14,8 @@ import FormError from "../components/ui/FormError.astro";
   <section class="card kpis" data-kpis>
     <StatCard label="Monitores" value="—" dataKey="monitores" />
     <StatCard label="Valor en maletas" value="—" dataKey="valor" hint="Al costo promedio" />
-    <StatCard label="Vendido" value="—" dataKey="vendido" />
-    <StatCard label="Por recibir" value="—" dataKey="debe" />
+    <StatCard label="Vendido" value="—" dataKey="vendido" hint="Todo en pesos" />
+    <StatCard label="Por recibir" value="—" dataKey="debe" hint="Todo en pesos" />
   </section>
 
   <section class="card card-list" data-table>
@@ -79,7 +79,7 @@ import FormError from "../components/ui/FormError.astro";
       <div class="span-2"><FormError /></div>
       <div class="field span-2">
         <label for="dn-valor">Valor recibido</label>
-        <input id="dn-valor" name="valor" class="input tnum" type="text" inputmode="numeric" data-money placeholder="0" />
+        <input id="dn-valor" name="valor" class="input tnum" type="text" inputmode="decimal" data-money placeholder="0" />
         <span class="hint" data-debe-hint></span>
       </div>
       <div class="field span-2">
@@ -100,7 +100,7 @@ import FormError from "../components/ui/FormError.astro";
   import "../lib/ui";
   import { initTableFilter } from "../lib/ui/table-filter";
   import { setKpi } from "../lib/ui/kpi";
-  import { cuadre, stockFilas, bodega, producto, ventas, pagos, totalMov, registrarPago, metodosPago } from "../lib/store";
+  import { cuadre, stockFilas, bodega, producto, ventas, pagos, totalLocal, registrarPago, metodosPago, monedaDe, precioEn } from "../lib/store";
   import { money, num, day, esc, searchText, menu, avatar, intentar, parseNum, flashRow, dsSelect } from "../lib/view";
 
   const scope = document.querySelector<HTMLElement>("[data-table]")!;
@@ -118,9 +118,9 @@ import FormError from "../components/ui/FormError.astro";
           <td><span class="who">${avatar(n)}<span><span class="strong">${esc(n)}</span><p class="sub">${esc([f.bodega.ciudad, f.bodega.pais].filter(Boolean).join(" · ") || "Sin ciudad")}</p></span></span></td>
           <td class="num tnum" data-sort-value="${f.unidades}">${num(f.unidades)} und</td>
           <td class="num tnum" data-sort-value="${f.valor}">${money(f.valor)}</td>
-          <td class="num tnum" data-sort-value="${f.vendido}">${money(f.vendido)}<p class="sub">${num(f.vendidas)} und</p></td>
-          <td class="num tnum" data-sort-value="${f.entregado}">${money(f.entregado)}</td>
-          <td class="num tnum strong nowrap" data-sort-value="${f.debe}">${f.debe > 0 ? '<span class="dot warning" title="Tiene dinero por entregar"></span> ' : ""}${money(f.debe)}</td>
+          <td class="num tnum" data-sort-value="${f.vendidoBase}">${money(f.vendido, f.moneda)}<p class="sub">${num(f.vendidas)} und</p></td>
+          <td class="num tnum" data-sort-value="${f.entregado}">${money(f.entregado, f.moneda)}</td>
+          <td class="num tnum strong nowrap" data-sort-value="${f.debeBase}">${f.debe > 0 ? '<span class="dot warning" title="Tiene dinero por entregar"></span> ' : ""}${money(f.debe, f.moneda)}</td>
           <td class="cell-actions">${menu([
             { value: "maleta", label: "Ver maleta y ventas", icon: "bi-briefcase" },
             { value: "entregar", label: "Entregarle mercancía", icon: "bi-box-arrow-right" },
@@ -130,11 +130,12 @@ import FormError from "../components/ui/FormError.astro";
         </tr>`;
       })
       .join("");
-    const sum = (k: "valor" | "vendido" | "debe") => filas.reduce((a, f) => a + f[k], 0);
+    // Los totales de arriba van en pesos (cada monitor pasado con la tasa de su país)
+    const sum = (k: "valor" | "vendidoBase" | "debeBase") => filas.reduce((a, f) => a + f[k], 0);
     setKpi(kpis, "monitores", filas.length);
     setKpi(kpis, "valor", money(sum("valor")));
-    setKpi(kpis, "vendido", money(sum("vendido")));
-    setKpi(kpis, "debe", money(sum("debe")));
+    setKpi(kpis, "vendido", money(sum("vendidoBase")));
+    setKpi(kpis, "debe", money(filas.reduce((a, f) => a + Math.max(0, f.debeBase), 0)));
     table.rescan();
   }
   render();
@@ -144,24 +145,26 @@ import FormError from "../components/ui/FormError.astro";
   function verMaleta(id: string) {
     const m = document.getElementById("maleta-modal")!;
     m.querySelector("[data-modal-title]")!.textContent = `Maleta de ${nombre(id)}`;
+    const b = bodega(id)!;
+    const { moneda } = monedaDe(b);
     m.querySelector("[data-m-tiene]")!.innerHTML = esto(
       stockFilas()
         .filter((f) => f.bodega_id === id)
-        .map((f) => `<tr><td class="strong">${esc(producto(f.producto_id)?.nombre)}</td><td class="num tnum">${num(f.cantidad)}</td><td class="num tnum">${money(producto(f.producto_id)!.precio_venta)}</td><td class="num tnum">${money(f.valor)}</td></tr>`),
+        .map((f) => `<tr><td class="strong">${esc(producto(f.producto_id)?.nombre)}</td><td class="num tnum">${num(f.cantidad)}</td><td class="num tnum">${precioEn(f.producto_id, b.pais) ? money(precioEn(f.producto_id, b.pais), moneda) : "—"}</td><td class="num tnum">${money(f.valor)}</td></tr>`),
       4,
       "La maleta está vacía.",
     );
     m.querySelector("[data-m-ventas]")!.innerHTML = esto(
       ventas()
         .filter((v) => v.origen_id === id)
-        .map((v) => `<tr><td class="nowrap">${day(v.fecha)}</td><td>${esc(v.curso ?? "—")}</td><td>${esc(v.items.map((i) => `${i.cantidad} ${producto(i.producto_id)?.nombre}`).join(" · "))}</td><td class="num tnum">${money(totalMov(v))}</td></tr>`),
+        .map((v) => `<tr><td class="nowrap">${day(v.fecha)}</td><td>${esc(v.curso ?? "—")}</td><td>${esc(v.items.map((i) => `${i.cantidad} ${producto(i.producto_id)?.nombre}`).join(" · "))}</td><td class="num tnum">${money(totalLocal(v), v.moneda)}</td></tr>`),
       4,
       "Sin ventas.",
     );
     m.querySelector("[data-m-pagos]")!.innerHTML = esto(
       pagos()
         .filter((p) => p.bodega_id === id)
-        .map((p) => `<tr><td class="nowrap">${day(p.fecha)}</td><td>${esc(p.nota ?? "—")}</td><td>${esc(p.creado_por)}</td><td class="num tnum">${money(p.valor)}</td></tr>`),
+        .map((p) => `<tr><td class="nowrap">${day(p.fecha)}</td><td>${esc(p.nota ?? "—")}</td><td>${esc(p.creado_por)}</td><td class="num tnum">${money(p.valor, p.moneda)}</td></tr>`),
       4,
       "Todavía no ha entregado dinero.",
     );
@@ -182,16 +185,16 @@ import FormError from "../components/ui/FormError.astro";
     form.reset();
     metodo.value = "";
     intentar(form, () => {});
-    const debe = cuadre().find((c) => c.bodega.id === id)!.debe;
+    const c = cuadre().find((x) => x.bodega.id === id)!;
     dinero.querySelector("[data-modal-title]")!.textContent = `Dinero recibido de ${nombre(id)}`;
-    dinero.querySelector("[data-debe-hint]")!.textContent = `Debe ${money(debe)}.`;
+    dinero.querySelector("[data-debe-hint]")!.textContent = `En ${c.moneda}. Debe ${money(c.debe, c.moneda)}.`;
     window.ui.openModal("dinero-modal");
     form.querySelector<HTMLInputElement>("[name=valor]")!.focus();
   }
   dinero.querySelector("[data-save]")!.addEventListener("click", async () => {
     const valor = parseNum(form.querySelector<HTMLInputElement>("[name=valor]")!.value);
     const nota = form.querySelector<HTMLInputElement>("[name=nota]")!.value;
-    if (!(await intentar(form, () => registrarPago(actual, valor, nota, metodo.value ? Number(metodo.value) : undefined), `Recibido ${money(valor)} de ${nombre(actual)}`))) return;
+    if (!(await intentar(form, () => registrarPago(actual, valor, nota, metodo.value ? Number(metodo.value) : undefined), `Recibido ${money(valor, monedaDe(bodega(actual)).moneda)} de ${nombre(actual)}`))) return;
     window.ui.closeModal("dinero-modal");
     render();
     flashRow(body.querySelector(`tr[data-id="${actual}"]`));

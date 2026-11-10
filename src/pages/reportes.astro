@@ -21,7 +21,7 @@ const grupos = [
   </PageHeader>
 
   <section class="card kpis" data-kpis>
-    <StatCard label="Vendido" value="—" dataKey="total" />
+    <StatCard label="Vendido" value="—" dataKey="total" hint="Todo en pesos" />
     <StatCard label="Costo" value="—" dataKey="costo" />
     <StatCard label="Ganancia" value="—" dataKey="ganancia" />
     <StatCard label="Unidades" value="—" dataKey="cantidad" />
@@ -104,7 +104,8 @@ const grupos = [
   const lineas = ventas().flatMap((v) => {
     const b = bodega(v.origen_id)!;
     return v.items.map((i) => {
-      const total = i.cantidad * i.valor_unitario * v.tasa;
+      const local = i.cantidad * i.valor_unitario; // en la moneda del país
+      const total = local * v.tasa; // en pesos
       const costo = i.cantidad * i.costo_unitario;
       return {
         fecha: v.fecha,
@@ -115,6 +116,8 @@ const grupos = [
         curso: v.curso ?? "Sin curso",
         producto: producto(i.producto_id)?.nombre ?? "—",
         cantidad: i.cantidad,
+        moneda: v.moneda,
+        local,
         total,
         costo,
         ganancia: total - costo,
@@ -143,7 +146,7 @@ const grupos = [
         <td>${esc(l.monitor)}<p class="sub">${esc(l.pais)}</p></td>
         <td>${esc(l.curso)}<p class="sub">${esc(l.pago)}</p></td>
         <td class="num tnum">${num(l.cantidad)}</td>
-        <td class="num tnum" data-sort-value="${l.total}">${money(l.total)}</td>
+        <td class="num tnum" data-sort-value="${l.total}">${money(l.total)}${l.moneda !== "COP" ? `<p class="sub">${money(l.local, l.moneda)}</p>` : ""}</td>
         <td class="num tnum muted" data-sort-value="${l.costo}">${money(l.costo)}</td>
         <td class="num tnum strong" data-sort-value="${l.ganancia}">${money(l.ganancia)}</td>
       </tr>`,
@@ -206,12 +209,12 @@ const grupos = [
   document.querySelector("[data-excel]")!.addEventListener("click", () => {
     const rows: (string | number)[][] = groupBy
       ? [
-          [scope.querySelector(`[data-group-by="${groupBy}"]`)!.textContent!, "Unidades", "Vendido", "Costo", "Ganancia"],
+          [scope.querySelector(`[data-group-by="${groupBy}"]`)!.textContent!, "Unidades", "Vendido (pesos)", "Costo (pesos)", "Ganancia (pesos)"],
           ...grupos(visibles).map(([k, g]) => [k, g.cantidad, Math.round(g.total), Math.round(g.costo), Math.round(g.ganancia)]),
         ]
       : [
-          ["Fecha", "Producto", "Vendió", "País", "Curso", "Pago", "Cantidad", "Vendido", "Costo", "Ganancia"],
-          ...visibles.map((l) => [l.fecha, l.producto, l.monitor, l.pais, l.curso, l.pago, l.cantidad, Math.round(l.total), Math.round(l.costo), Math.round(l.ganancia)]),
+          ["Fecha", "Producto", "Vendió", "País", "Curso", "Pago", "Cantidad", "Moneda", "Cobrado (en su moneda)", "Vendido (pesos)", "Costo (pesos)", "Ganancia (pesos)"],
+          ...visibles.map((l) => [l.fecha, l.producto, l.monitor, l.pais, l.curso, l.pago, l.cantidad, l.moneda, l.local, Math.round(l.total), Math.round(l.costo), Math.round(l.ganancia)]),
         ];
     descargarCsv(`ventas-jdt${groupBy ? `-por-${groupBy}` : ""}.csv`, rows);
     window.ui.toast("Archivo descargado", { tone: "success" });
