@@ -85,10 +85,23 @@ async function token() {
   return (await renovando)?.access_token ?? null;
 }
 
+/**
+ * Cambia de pantalla sin cortar la animación de JDT: si se está viendo (primera vez en la pestaña), se olvida que
+ * ya se vio para que salga completa en la pantalla siguiente. `url` vacío = recargar la misma.
+ */
+export function irA(url = "") {
+  if (document.getElementById("splash"))
+    try {
+      sessionStorage.removeItem("jdt-splash");
+    } catch {}
+  if (url) location.replace(url);
+  else location.reload();
+}
+
 /** La sesión venció o la cerraron: a entrar de nuevo. Devuelve una espera que no termina (la página se va). */
 export function aEntrar(): Promise<never> {
   guardar(null);
-  location.replace(`/login?volver=${encodeURIComponent(location.pathname + location.search)}`);
+  irA(`/login?volver=${encodeURIComponent(location.pathname + location.search)}`);
   return new Promise<never>(() => {});
 }
 

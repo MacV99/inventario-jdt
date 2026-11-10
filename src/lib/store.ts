@@ -7,7 +7,7 @@
 // (await al importarlo). Abrir una pantalla pinta al instante con lo último guardado en el navegador y revisa la base
 // por detrás; si algo cambió, se repinta. Cada cambio devuelve los datos nuevos en la misma respuesta.
 
-import { conBase, haySesion, sesionId, rpc, aEntrar } from "./api";
+import { conBase, haySesion, sesionId, rpc, aEntrar, irA } from "./api";
 
 export type Rol = "superadmin" | "admin" | "monitor";
 export type TipoMov = "compra" | "traslado" | "entrega" | "devolucion" | "venta" | "ajuste_entrada" | "ajuste_salida";
@@ -144,7 +144,7 @@ async function iniciar() {
         if (d instanceof Error) return;
         if (JSON.stringify({ version: VERSION, ...d }) === JSON.stringify(guardado)) return;
         usar(d);
-        location.reload();
+        irA();
       });
     } else {
       const d = await fresco;
@@ -162,8 +162,8 @@ async function iniciar() {
 
   // Cada quien en sus pantallas
   const esAdmin = cache.yo.rol !== "monitor";
-  if (pagina === "admin" && !esAdmin) location.replace("/mi-maleta");
-  if (pagina === "monitor" && esAdmin && !DEMO) location.replace("/");
+  if (pagina === "admin" && !esAdmin) irA("/mi-maleta");
+  if (pagina === "monitor" && esAdmin && !DEMO) irA("/");
 }
 
 // Solo en el navegador (al armar la página en el servidor no hay datos que cargar)

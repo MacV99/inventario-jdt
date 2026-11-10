@@ -35,7 +35,7 @@ import PasswordInput from "../components/ui/PasswordInput.astro";
 </AuthLayout>
 
 <script>
-  import { entrar, salir, rpc, haySesion } from "../lib/api";
+  import { entrar, salir, rpc, haySesion, irA } from "../lib/api";
 
   const form = document.querySelector<HTMLFormElement>("[data-login-form]")!;
   const errorBox = document.querySelector<HTMLElement>("[data-login-error]")!;
@@ -64,7 +64,7 @@ import PasswordInput from "../components/ui/PasswordInput.astro";
   // Ya tiene sesión: directo adentro
   if (haySesion() && !motivo)
     rpc<{ yo: { rol: string } }>("inv_datos")
-      .then((d) => location.replace(destino(d.yo.rol)))
+      .then((d) => irA(destino(d.yo.rol)))
       .catch(() => {});
 
   form.addEventListener("submit", async (e) => {
