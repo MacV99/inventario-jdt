@@ -1,0 +1,173 @@
+
+/*
+  FUENTE DE VERDAD DE VALORES. El porqué vive en DESIGN_SYSTEM.md.
+  Nivel 1 = primitivos (únicos con valores crudos)
+  Nivel 2 = semánticos por tema (solo var() de nivel 1)
+  Nivel 3 = componente (solo var() de nivel 2)
+  Tema: <html data-theme="light|dark"> lo resuelve el script de AppLayout (preferencia: system por defecto).
+*/
+
+/* ═════════════ NIVEL 1 · PRIMITIVOS ═════════════ */
+:root {
+  --gray-0: #ffffff;
+  --gray-50: #f7f7f8;
+  --gray-100: #eff0f2;
+  --gray-200: #e3e4e7;
+  --gray-300: #cfd0d4;
+  --gray-400: #a9aab0;
+  --gray-500: #8a8b90;
+  --gray-600: #6a6b70;
+  --gray-700: #4a4b50;
+  --gray-800: #2a2b2f;
+  --gray-850: #202125;
+  --gray-900: #18191c;
+  --gray-950: #111214;
+
+  /* Color SOLO semántico (estado). Variante clara para usar sobre fondos oscuros. */
+  --green-600: #2f7d4f;
+  --green-300: #6fcf97;
+  --amber-600: #9a6a00;
+  --amber-300: #e6b85c;
+  --red-600: #b3261e;
+  --red-300: #f2847c;
+
+  /* Escalas fijas (no cambian con el tema) */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 24px;
+  --space-6: 32px;
+  --space-7: 48px;
+  --space-8: 64px;
+  --space-9: 96px;
+
+  --radius-sm: 8px;
+  --radius-md: 10px;
+  --radius-lg: 14px;
+  --radius-pill: 999px;
+
+  --font-sans: 'Montserrat', 'Gill Sans', system-ui, sans-serif;
+  --text-xs: 0.68rem;
+  --text-sm: 0.78rem;
+  --text-md: 0.86rem;
+  --text-lg: 1rem;
+  --text-xl: 1.2rem;
+  --text-2xl: 1.45rem;
+  --tracking-caps: 0.14em;
+
+  /* Densidad compacta (ADR-035): el panel aprovecha el espacio al máximo */
+  --control-h: 34px;
+  --control-h-sm: 28px;
+  --sidebar-w: 216px;
+  --sidebar-w-collapsed: 56px;
+  --topbar-h: 52px;
+
+  --z-dropdown: 50;
+  --z-nav: 80;
+  --z-modal: 100;
+  --z-toast: 110;
+
+  --ease: cubic-bezier(0.2, 0, 0, 1);
+  --transition: all 0.18s var(--ease);
+}
+
+/* ═════════════ NIVEL 2 · SEMÁNTICOS — CLARO ═════════════ */
+:root,
+:root[data-theme="light"] {
+  color-scheme: light;
+
+  --clr-bg: var(--gray-100);
+  --clr-surface: var(--gray-50);
+  --clr-surface-raised: var(--gray-0);
+  --clr-surface-hover: var(--gray-200);
+  --clr-border: var(--gray-200);
+  --clr-border-strong: var(--gray-300);
+
+  --clr-text: var(--gray-950);
+  --clr-text-2: var(--gray-700);
+  --clr-text-muted: var(--gray-600);
+  --clr-text-placeholder: var(--gray-500);
+
+  --clr-primary: var(--gray-900);
+  --clr-primary-hover: var(--gray-800);
+  --clr-on-primary: var(--gray-0);
+
+  --clr-success: var(--green-600);
+  --clr-warning: var(--amber-600);
+  --clr-danger: var(--red-600);
+  --clr-success-bg: color-mix(in oklch, var(--green-600) 10%, var(--gray-0));
+  --clr-warning-bg: color-mix(in oklch, var(--amber-600) 10%, var(--gray-0));
+  --clr-danger-bg: color-mix(in oklch, var(--red-600) 10%, var(--gray-0));
+
+  --shadow-sm: 0 1px 2px rgb(0 0 0 / 0.04), 0 1px 3px rgb(0 0 0 / 0.04);
+  --shadow-md: 0 4px 16px rgb(0 0 0 / 0.07);
+  --shadow-lg: 0 16px 48px rgb(0 0 0 / 0.14);
+  --backdrop: rgb(17 18 20 / 0.36);
+  --focus-ring: 0 0 0 3px color-mix(in oklch, var(--gray-900) 28%, transparent);
+}
+
+/* ═════════════ NIVEL 2 · SEMÁNTICOS — OSCURO ═════════════ */
+:root[data-theme="dark"] {
+  color-scheme: dark;
+
+  --clr-bg: var(--gray-950);
+  --clr-surface: var(--gray-900);
+  --clr-surface-raised: var(--gray-850);
+  --clr-surface-hover: var(--gray-800);
+  --clr-border: var(--gray-800);
+  --clr-border-strong: var(--gray-700);
+
+  --clr-text: var(--gray-100);
+  --clr-text-2: var(--gray-300);
+  --clr-text-muted: var(--gray-400);
+  --clr-text-placeholder: var(--gray-500);
+
+  --clr-primary: var(--gray-100);
+  --clr-primary-hover: var(--gray-0);
+  --clr-on-primary: var(--gray-950);
+
+  --clr-success: var(--green-300);
+  --clr-warning: var(--amber-300);
+  --clr-danger: var(--red-300);
+  --clr-success-bg: color-mix(in oklch, var(--green-300) 14%, var(--gray-900));
+  --clr-warning-bg: color-mix(in oklch, var(--amber-300) 14%, var(--gray-900));
+  --clr-danger-bg: color-mix(in oklch, var(--red-300) 14%, var(--gray-900));
+
+  --shadow-sm: 0 1px 2px rgb(0 0 0 / 0.3);
+  --shadow-md: 0 4px 16px rgb(0 0 0 / 0.4);
+  --shadow-lg: 0 16px 48px rgb(0 0 0 / 0.55);
+  --backdrop: rgb(0 0 0 / 0.6);
+  --focus-ring: 0 0 0 3px color-mix(in oklch, var(--gray-100) 32%, transparent);
+}
+
+/* ═════════════ NIVEL 3 · COMPONENTE ═════════════ */
+:root {
+  --input-bg: var(--clr-surface-raised);
+  --input-border: var(--clr-border);
+  --input-border-hover: var(--clr-border-strong);
+  --input-border-focus: var(--clr-text-2);
+
+  --popover-bg: var(--clr-surface-raised);
+  --popover-border: var(--clr-border);
+  --option-hover-bg: var(--clr-surface-hover);
+  --option-selected-bg: var(--clr-surface-hover);
+
+  --modal-bg: var(--clr-surface-raised);
+  /* Campos dentro de una ventana: un tono más hondo que el fondo de la ventana (si no, se confunden) */
+  --modal-field-bg: var(--clr-bg);
+  --modal-backdrop: var(--backdrop);
+
+  --nav-active-bg: var(--clr-primary);
+  --nav-active-fg: var(--clr-on-primary);
+  /* Menú en celular: cajón que sale por la izquierda */
+  --nav-drawer-w: min(280px, 86vw);
+
+
+  /* Densidad */
+  --page-pad: var(--space-5);
+  --page-gap: var(--space-4);
+  --card-pad: var(--space-4);
+  --cell-py: 6px;
+  --cell-px: var(--space-3);
+}

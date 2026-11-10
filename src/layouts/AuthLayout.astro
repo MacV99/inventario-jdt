@@ -1,0 +1,79 @@
+---
+// Pantalla de acceso: sin sidebar, una tarjeta centrada (igual al panel de jdt-call-center).
+import "../styles/icons.css";
+import "../styles/project.css";
+import "../styles/global.css";
+import BaseHead from "../components/app/BaseHead.astro";
+import Splash from "../components/app/Splash.astro";
+import ThemeSwitch from "../components/app/ThemeSwitch.astro";
+
+interface Props {
+  title: string;
+}
+
+const { title } = Astro.props;
+---
+
+<html lang="es" data-theme="light">
+  <head>
+    <BaseHead title={title} />
+  </head>
+
+  <body>
+    <Splash />
+    <main class="auth">
+      <div class="brand flex-row">
+        <img src="/img/logo-96.png" alt="" />
+        <span>Inventario·JDT</span>
+      </div>
+      <section class="card auth-card">
+        <slot />
+      </section>
+      <div class="foot">
+        <ThemeSwitch />
+      </div>
+    </main>
+  </body>
+</html>
+
+<script>
+  import "../lib/ui";
+</script>
+
+<style>
+  .auth {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: var(--space-4);
+    min-height: 100dvh;
+    padding: var(--space-5) var(--space-3);
+  }
+
+  .brand {
+    gap: var(--space-3);
+    font-size: var(--text-sm);
+    font-weight: 800;
+    letter-spacing: var(--tracking-caps);
+    text-transform: uppercase;
+  }
+
+  .brand img {
+    width: 30px;
+    height: 30px;
+  }
+
+  .auth-card {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-4);
+    width: 100%;
+    max-width: 360px;
+    padding: var(--space-5);
+  }
+
+  .foot {
+    width: 120px;
+  }
+</style>

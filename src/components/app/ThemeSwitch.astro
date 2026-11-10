@@ -1,0 +1,53 @@
+---
+// Preferencia de tema: system (defecto) · light · dark. La resolución vive en el script
+// inline de AppLayout (window.__theme) para evitar parpadeo al cargar.
+const choices = [
+  { value: "system", icon: "bi-circle-half", label: "Sistema" },
+  { value: "light", icon: "bi-sun", label: "Claro" },
+  { value: "dark", icon: "bi-moon", label: "Oscuro" },
+];
+---
+
+<div class="segmented theme-switch" role="group" aria-label="Tema">
+  {
+    choices.map((c) => (
+      <button type="button" data-theme-choice={c.value} aria-pressed="false" data-tip={`Tema: ${c.label}`} data-tip-side="top">
+        <i class={`bi ${c.icon}`} aria-hidden="true" />
+        <span class="sr-only">{c.label}</span>
+      </button>
+    ))
+  }
+</div>
+
+<style>
+  .theme-switch {
+    width: 100%;
+  }
+
+  .theme-switch button {
+    flex: 1;
+    justify-content: center;
+    padding: 5px 0;
+    font-size: var(--text-sm);
+  }
+</style>
+
+<script>
+  const buttons = document.querySelectorAll<HTMLButtonElement>("[data-theme-choice]");
+  const sync = () => {
+    const pref = window.__theme.get();
+    buttons.forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.themeChoice === pref)));
+  };
+  const order = ["system", "light", "dark"] as const;
+  buttons.forEach((b) =>
+    b.addEventListener("click", () => {
+      let choice = b.dataset.themeChoice as (typeof order)[number];
+      // Menú retraído: solo se ve el activo, y un clic pasa al siguiente
+      if (document.documentElement.dataset.nav === "collapsed" && choice === window.__theme.get())
+        choice = order[(order.indexOf(choice) + 1) % order.length]!;
+      window.__theme.set(choice);
+      sync();
+    }),
+  );
+  sync();
+</script>

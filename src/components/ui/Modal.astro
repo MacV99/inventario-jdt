@@ -1,0 +1,35 @@
+---
+// Modal de contenido propio (formularios, detalles). Para avisos/confirmaciones usar
+// window.ui.alert / confirm / confirmTyped (lib/ui/dialogs.ts).
+// Abrir: <button data-modal-open="mi-id"> · Cerrar: <button data-modal-close>
+interface Props {
+  id: string;
+  title: string;
+  description?: string;
+  size?: "md" | "lg" | "xl";
+}
+
+const { id, title, description, size = "md" } = Astro.props;
+---
+
+<dialog id={id} class:list={["modal", { "modal-lg": size === "lg", "modal-xl": size === "xl" }]} aria-labelledby={`${id}-title`}>
+  <div class="modal-header">
+    <div>
+      <h2 id={`${id}-title`} data-modal-title>{title}</h2>
+      <p class="muted" data-modal-description hidden={!description}>{description}</p>
+    </div>
+    <button type="button" class="btn btn-subtle btn-icon btn-sm modal-close" data-modal-close aria-label="Cerrar">
+      <i class="bi bi-x-lg" aria-hidden="true"></i>
+    </button>
+  </div>
+  <div class="modal-body">
+    <slot />
+  </div>
+  {
+    Astro.slots.has("footer") && (
+      <div class="modal-footer">
+        <slot name="footer" />
+      </div>
+    )
+  }
+</dialog>

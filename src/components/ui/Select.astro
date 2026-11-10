@@ -1,0 +1,58 @@
+---
+// Envoltorio de <ds-select> (lib/ui/select.ts). Nunca usar <select> nativo en el panel:
+// su lista desplegable no se puede estilizar y rompe el design system.
+interface Option {
+  value: string;
+  label: string;
+  hint?: string; // texto secundario en gris (p. ej. fechas)
+  disabled?: boolean;
+  /** Alias para la búsqueda, separados por coma (p. ej. "bog, bogota d.c."). */
+  keywords?: string;
+  /** Solo aparece al buscarla (p. ej. un número ocupado, junto con `disabled`). */
+  searchOnly?: boolean;
+}
+
+interface Props {
+  options: Option[];
+  name?: string;
+  value?: string;
+  placeholder?: string;
+  label?: string;
+  searchable?: boolean;
+  /** Permite crear una opción nueva si lo buscado no existe (catálogos). */
+  creatable?: boolean;
+  /** Texto del botón de crear, p. ej. "Crear ciudad". */
+  createLabel?: string;
+  /** Opción fija al final de la lista (no cambia el valor): emite "select-action". P. ej. "Vincular un número nuevo". */
+  actionLabel?: string;
+  /** Ícono de Bootstrap Icons de esa opción (por defecto bi-plus-lg). */
+  actionIcon?: string;
+  disabled?: boolean;
+  hidden?: boolean;
+  /** Clave para lib/ui/table-filter.ts (data-filter). */
+  filter?: string;
+  id?: string;
+  class?: string;
+}
+
+const { options, name, value, placeholder, label, searchable, creatable, createLabel, actionLabel, actionIcon, disabled, hidden, filter, id, class: className } = Astro.props;
+---
+
+<ds-select
+  id={id}
+  class={className}
+  name={name}
+  value={value}
+  placeholder={placeholder}
+  aria-label={label ?? placeholder}
+  searchable={searchable || undefined}
+  creatable={creatable || undefined}
+  create-label={createLabel}
+  action-label={actionLabel}
+  action-icon={actionIcon}
+  disabled={disabled || undefined}
+  hidden={hidden || undefined}
+  data-filter={filter}
+>
+  {options.map((o) => <option value={o.value} disabled={o.disabled} data-hint={o.hint} data-keywords={o.keywords} data-search-only={o.searchOnly || undefined}>{o.label}</option>)}
+</ds-select>

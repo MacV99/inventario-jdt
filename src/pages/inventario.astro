@@ -1,0 +1,262 @@
+---
+// Inventario (admin): qué hay en cada bodega y maleta (filtros por país, ciudad y tipo; los KPIs siguen al filtro)
+// y el total por producto. Se abre filtrado con ?ubicacion=<id> (desde Resumen o Bodegas).
+import AppLayout from "../layouts/AppLayout.astro";
+import PageHeader from "../components/ui/PageHeader.astro";
+import StatCard from "../components/ui/StatCard.astro";
+import Select from "../components/ui/Select.astro";
+import Modal from "../components/ui/Modal.astro";
+import FormError from "../components/ui/FormError.astro";
+---
+
+<AppLayout title="Inventario">
+  <PageHeader title="Inventario" subtitle="Lo que hay en cada bodega y maleta">
+    <button slot="actions" type="button" class="btn btn-ghost" data-conteo><i class="bi bi-clipboard-check" aria-hidden="true"></i>Contar una bodega</button>
+    <a slot="actions" href="/movimientos?nuevo" class="btn btn-primary"><i class="bi bi-plus-lg" aria-hidden="true"></i>Nuevo movimiento</a>
+  </PageHeader>
+
+  <section class="card kpis" data-kpis>
+    <StatCard label="Valor" value="—" dataKey="valor" hint="Al costo promedio" />
+    <StatCard label="Unidades" value="—" dataKey="unidades" />
+    <StatCard label="Productos" value="—" dataKey="productos" />
+    <StatCard label="Ubicaciones" value="—" dataKey="ubicaciones" />
+  </section>
+
+  <div class="tabs" role="tablist" aria-label="Vista">
+    <button class="tab" role="tab" aria-selected="true" data-tab="ubicacion">Por ubicación</button>
+    <button class="tab" role="tab" aria-selected="false" data-tab="producto">Por producto</button>
+  </div>
+
+  <section class="card card-list" data-table data-panel="ubicacion">
+    <div class="toolbar">
+      <label class="input-icon grow">
+        <i class="bi bi-search" aria-hidden="true"></i>
+        <input class="input" type="search" placeholder="Buscar producto o código…" aria-label="Buscar" data-filter-q />
+      </label>
+      <Select value="" filter="tipo" label="Tipo" options={[{ value: "", label: "Bodegas y maletas" }, { value: "bodega", label: "Solo bodegas" }, { value: "monitor", label: "Solo maletas" }]} />
+      <Select value="" searchable filter="pais" label="País" options={[{ value: "", label: "Todos los países" }]} id="f-pais" />
+      <Select value="" searchable filter="ciudad" label="Ciudad" options={[{ value: "", label: "Todas las ciudades" }]} id="f-ciudad" />
+      <Select value="" searchable filter="ubicacion" label="Ubicación" options={[{ value: "", label: "Todas las ubicaciones" }]} id="f-ubicacion" />
+    </div>
+    <div class="table-wrap">
+      <table class="table table-cards">
+        <thead>
+          <tr>
+            <th data-sort="text" data-card-title>Producto</th>
+            <th data-sort="text">Ubicación</th>
+            <th data-sort="text">Ciudad</th>
+            <th class="num" data-sort="num">Cantidad</th>
+            <th class="num" data-sort="num">Costo prom.</th>
+            <th class="num" data-sort="num">Valor</th>
+          </tr>
+        </thead>
+        <tbody data-body></tbody>
+      </table>
+    </div>
+    <div class="empty" data-empty hidden>
+      <i class="bi bi-box-seam" aria-hidden="true"></i>
+      <p class="muted">Nada coincide con el filtro.</p>
+    </div>
+  </section>
+
+  <section class="card card-list" data-table-prod data-panel="producto" hidden>
+    <div class="toolbar">
+      <label class="input-icon grow">
+        <i class="bi bi-search" aria-hidden="true"></i>
+        <input class="input" type="search" placeholder="Buscar producto o código…" aria-label="Buscar" data-filter-q />
+      </label>
+    </div>
+    <div class="table-wrap">
+      <table class="table table-cards">
+        <thead>
+          <tr>
+            <th data-sort="text" data-card-title>Producto</th>
+            <th class="num" data-sort="num">En bodegas</th>
+            <th class="num" data-sort="num">En maletas</th>
+            <th class="num" data-sort="num">Total</th>
+            <th class="num" data-sort="num">Mínimo</th>
+            <th class="num" data-sort="num">Valor</th>
+          </tr>
+        </thead>
+        <tbody data-body-prod></tbody>
+      </table>
+    </div>
+    <div class="empty" data-empty hidden>
+      <i class="bi bi-tags" aria-hidden="true"></i>
+      <p class="muted">Ningún producto coincide.</p>
+    </div>
+  </section>
+  <!-- Conteo físico: se escribe lo que hay de verdad y las diferencias quedan como ajustes -->
+  <Modal id="conteo-modal" title="Contar una bodega" description="Escribe lo que contaste. Lo que dejes vacío no cambia." size="lg">
+    <div class="conteo">
+      <FormError />
+      <div class="field">
+        <span class="label">Bodega o maleta</span>
+        <Select searchable placeholder="Elegir" options={[]} id="c-bodega" />
+      </div>
+      <div class="table-wrap">
+        <table class="table">
+          <thead><tr><th>Producto</th><th class="num">Sistema</th><th class="num">Contado</th><th class="num">Diferencia</th></tr></thead>
+          <tbody data-c-body></tbody>
+        </table>
+      </div>
+      <div class="field">
+        <label for="c-nota">Nota</label>
+        <input id="c-nota" class="input" placeholder="Ej. Conteo de fin de mes" />
+      </div>
+      <p class="muted small" data-c-resumen></p>
+    </div>
+    <button slot="footer" type="button" class="btn btn-ghost" data-modal-close>Cancelar</button>
+    <button slot="footer" type="button" class="btn btn-primary" data-c-save>Guardar conteo</button>
+  </Modal>
+</AppLayout>
+
+<style>
+  .conteo {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-3);
+  }
+
+  .conteo :global(.contado) {
+    width: 90px;
+    height: var(--control-h-sm);
+    margin-left: auto;
+    text-align: right;
+  }
+</style>
+
+<script>
+  import "../lib/ui";
+  import { initTableFilter } from "../lib/ui/table-filter";
+  import { setKpi } from "../lib/ui/kpi";
+  import { bodegas, productos, stockFilas, bodega, producto, cantidadEn, guardarConteo } from "../lib/store";
+  import { money, num, esc, searchText, uniqueOptions, dsSelect, urlParam, intentar, parseNum, opcionesLugar } from "../lib/view";
+
+  const filas = stockFilas().map((f) => ({ ...f, b: bodega(f.bodega_id)!, p: producto(f.producto_id)! }));
+  const scope = document.querySelector<HTMLElement>("[data-table]")!;
+
+  // Opciones de los filtros según los datos
+  const bs = bodegas().filter((b) => b.activa);
+  dsSelect(scope, "#f-pais").setOptions([{ value: "", label: "Todos los países" }, ...uniqueOptions(bs.map((b) => b.pais))]);
+  dsSelect(scope, "#f-ciudad").setOptions([{ value: "", label: "Todas las ciudades" }, ...uniqueOptions(bs.map((b) => b.ciudad))]);
+  dsSelect(scope, "#f-ubicacion").setOptions([
+    { value: "", label: "Todas las ubicaciones" },
+    ...opcionesLugar(bs),
+  ]);
+
+  scope.querySelector("[data-body]")!.innerHTML = filas
+    .sort((a, b) => (a.b.tipo === b.b.tipo ? a.b.nombre.localeCompare(b.b.nombre) || a.p.nombre.localeCompare(b.p.nombre) : a.b.tipo === "bodega" ? -1 : 1))
+    .map(
+      (f) => `<tr data-row data-tipo="${f.b.tipo}" data-pais="${esc(f.b.pais)}" data-ciudad="${esc(f.b.ciudad)}" data-ubicacion="${f.b.id}"
+          data-producto="${f.p.id}" data-cantidad="${f.cantidad}" data-valor="${f.valor}" data-text="${esc(searchText(f.p.nombre, f.p.codigo))}">
+        <td><span class="strong">${esc(f.p.nombre)}</span><p class="sub">${esc(f.p.codigo)}</p></td>
+        <td>${esc(f.b.nombre)}<p class="sub">${f.b.tipo === "monitor" ? "Maleta" : "Bodega"}</p></td>
+        <td>${esc(f.b.ciudad || "—")}<p class="sub">${esc(f.b.pais)}</p></td>
+        <td class="num tnum" data-sort-value="${f.cantidad}">${num(f.cantidad)}</td>
+        <td class="num tnum" data-sort-value="${f.costo}">${money(f.costo)}</td>
+        <td class="num tnum strong" data-sort-value="${f.valor}">${money(f.valor)}</td>
+      </tr>`,
+    )
+    .join("");
+
+  const kpis = document.querySelector<HTMLElement>("[data-kpis]")!;
+  const table = initTableFilter(scope, ({ visible }) => {
+    const sum = (k: string) => visible.reduce((a, r) => a + Number(r.dataset[k]), 0);
+    setKpi(kpis, "valor", money(sum("valor")));
+    setKpi(kpis, "unidades", num(sum("cantidad")));
+    setKpi(kpis, "productos", new Set(visible.map((r) => r.dataset.producto)).size);
+    setKpi(kpis, "ubicaciones", new Set(visible.map((r) => r.dataset.ubicacion)).size);
+  });
+  table.rescan();
+  const desde = urlParam("ubicacion");
+  if (desde) table.set("ubicacion", desde);
+
+  // Por producto: total en bodegas y en maletas
+  const prodScope = document.querySelector<HTMLElement>("[data-table-prod]")!;
+  prodScope.querySelector("[data-body-prod]")!.innerHTML = productos()
+    .filter((p) => p.activo)
+    .map((p) => {
+      const mias = filas.filter((f) => f.p.id === p.id);
+      const enB = mias.filter((f) => f.b.tipo === "bodega").reduce((a, f) => a + f.cantidad, 0);
+      const enM = mias.filter((f) => f.b.tipo === "monitor").reduce((a, f) => a + f.cantidad, 0);
+      const valor = mias.reduce((a, f) => a + f.valor, 0);
+      const bajo = enB < p.stock_minimo;
+      return `<tr data-row data-text="${esc(searchText(p.nombre, p.codigo))}">
+        <td><span class="strong">${esc(p.nombre)}</span><p class="sub">${esc(p.codigo)}</p></td>
+        <td class="num tnum" data-sort-value="${enB}">${bajo ? '<span class="dot warning" title="Bajo el mínimo"></span> ' : ""}${num(enB)}</td>
+        <td class="num tnum" data-sort-value="${enM}">${num(enM)}</td>
+        <td class="num tnum strong" data-sort-value="${enB + enM}">${num(enB + enM)}</td>
+        <td class="num tnum muted">${num(p.stock_minimo)}</td>
+        <td class="num tnum" data-sort-value="${valor}">${money(valor)}</td>
+      </tr>`;
+    })
+    .join("");
+  initTableFilter(prodScope).rescan();
+
+  // ── Conteo físico ──
+  const cm = document.getElementById("conteo-modal")!;
+  const cBodega = dsSelect(cm, "#c-bodega");
+  const cBody = cm.querySelector<HTMLElement>("[data-c-body]")!;
+  const cResumen = cm.querySelector<HTMLElement>("[data-c-resumen]")!;
+  function pintarConteo() {
+    const b = cBodega.value;
+    cBody.innerHTML = b
+      ? productos()
+          .filter((p) => p.activo)
+          .map((p) => {
+            const hay = cantidadEn(b, p.id);
+            return `<tr data-c-prod="${p.id}" data-hay="${hay}">
+              <td class="strong">${esc(p.nombre)}<p class="sub">${esc(p.codigo)}</p></td>
+              <td class="num tnum">${num(hay)}</td>
+              <td class="num"><input class="input tnum contado" type="text" inputmode="numeric" aria-label="Contado de ${esc(p.nombre)}" /></td>
+              <td class="num tnum" data-dif></td>
+            </tr>`;
+          })
+          .join("")
+      : "";
+    recalcConteo();
+  }
+  function recalcConteo() {
+    let sobra = 0;
+    let falta = 0;
+    cBody.querySelectorAll<HTMLElement>("tr").forEach((tr) => {
+      const v = tr.querySelector<HTMLInputElement>("input")!.value.trim();
+      const d = v === "" ? 0 : parseNum(v) - Number(tr.dataset.hay);
+      tr.querySelector("[data-dif]")!.innerHTML = v === "" || d === 0 ? (v === "" ? "" : '<span class="muted">Coincide</span>') : `<span class="badge ${d > 0 ? "warning" : "danger"}">${d > 0 ? "+" : "−"}${num(Math.abs(d))}</span>`;
+      if (d > 0) sobra += d;
+      if (d < 0) falta -= d;
+    });
+    cResumen.textContent = sobra || falta ? `Sobran ${num(sobra)} y faltan ${num(falta)} unidades. Se guardan como ajustes.` : "";
+  }
+  cBodega.addEventListener("change", pintarConteo);
+  cBody.addEventListener("input", recalcConteo);
+  document.querySelector("[data-conteo]")!.addEventListener("click", () => {
+    intentar(cm, () => {});
+    cBodega.setOptions(opcionesLugar(bodegas().filter((b) => b.activa)));
+    cBodega.value = urlParam("ubicacion");
+    (cm.querySelector("#c-nota") as HTMLInputElement).value = "";
+    pintarConteo();
+    window.ui.openModal("conteo-modal");
+  });
+  cm.querySelector("[data-c-save]")!.addEventListener("click", async () => {
+    if (!cBodega.value) return intentar(cm, () => { throw new Error("Elige la bodega que contaste."); });
+    const conteo = [...cBody.querySelectorAll<HTMLElement>("tr")]
+      .map((tr) => ({ producto_id: tr.dataset.cProd!, valor: tr.querySelector<HTMLInputElement>("input")!.value.trim() }))
+      .filter((c) => c.valor !== "")
+      .map((c) => ({ producto_id: c.producto_id, contado: parseNum(c.valor) }));
+    if (!conteo.length) return intentar(cm, () => { throw new Error("Escribe al menos una cantidad contada."); });
+    let ids = "";
+    const ok = await intentar(
+      cm,
+      async () => {
+        ids = (await guardarConteo(cBodega.value, conteo, (cm.querySelector("#c-nota") as HTMLInputElement).value)).map((m) => `#${m.id}`).join(" y ");
+      },
+      undefined,
+      cm.querySelector<HTMLElement>("[data-c-save]"),
+    );
+    if (!ok) return;
+    window.ui.flash(`Conteo guardado: ajustes ${ids}`, "success");
+    location.reload();
+  });
+</script>

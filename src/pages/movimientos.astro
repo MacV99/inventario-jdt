@@ -1,0 +1,501 @@
+---
+// Movimientos (admin): compras, traslados, entregas, devoluciones, ventas y ajustes + registrar uno nuevo.
+// Nada se borra: un error se anula y queda el registro.
+// Dirección: ?nuevo abre el formulario (?nuevo=entrega&destino=m1 lo deja listo) · ?ver=1012 abre el detalle.
+import AppLayout from "../layouts/AppLayout.astro";
+import PageHeader from "../components/ui/PageHeader.astro";
+import Select from "../components/ui/Select.astro";
+import DatePicker from "../components/ui/DatePicker.astro";
+import Modal from "../components/ui/Modal.astro";
+import FormError from "../components/ui/FormError.astro";
+import { TIPO_MOV, MONEDAS } from "../lib/store";
+
+const tipos = Object.entries(TIPO_MOV).map(([value, t]) => ({ value, label: t.label, hint: `${t.desde} → ${t.hacia}` }));
+---
+
+<AppLayout title="Movimientos">
+  <PageHeader title="Movimientos" subtitle=" ">
+    <button slot="actions" type="button" class="btn btn-primary" data-new><i class="bi bi-plus-lg" aria-hidden="true"></i>Nuevo movimiento</button>
+  </PageHeader>
+
+  <section class="card card-list" data-table>
+    <div class="toolbar">
+      <label class="input-icon grow">
+        <i class="bi bi-search" aria-hidden="true"></i>
+        <input class="input" type="search" placeholder="Buscar número, producto, curso o nota…" aria-label="Buscar" data-filter-q />
+      </label>
+      <Select value="" filter="tipo" label="Tipo" options={[{ value: "", label: "Todos los tipos" }, ...tipos.map(({ value, label }) => ({ value, label }))]} />
+      <Select value="" searchable filter="ubicacion" label="Ubicación" options={[{ value: "", label: "Todas las ubicaciones" }]} id="f-ubicacion" />
+      <Select value="" filter="estado" label="Estado" options={[{ value: "", label: "Vigentes y anulados" }, { value: "vigente", label: "Solo vigentes" }, { value: "anulado", label: "Solo anulados" }]} />
+    </div>
+    <div class="table-wrap">
+      <table class="table table-cards">
+        <thead>
+          <tr>
+            <th data-sort="num" data-card-title>N.º</th>
+            <th data-sort="text">Fecha</th>
+            <th data-sort="text">Tipo</th>
+            <th>De → A</th>
+            <th class="num" data-sort="num">Unidades</th>
+            <th class="num" data-sort="num">Valor</th>
+            <th data-sort="text">Hecho por</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody data-body></tbody>
+      </table>
+    </div>
+    <div class="empty" data-empty hidden>
+      <i class="bi bi-arrow-left-right" aria-hidden="true"></i>
+      <p class="muted">Ningún movimiento coincide.</p>
+    </div>
+  </section>
+
+  <!-- Registrar movimiento: los campos y las opciones cambian según el tipo -->
+  <Modal id="mov-modal" title="Nuevo movimiento" description="Lo que sale de un lado entra al otro. No deja sacar más de lo que hay." size="lg">
+    <form class="form-grid" data-mov-form novalidate>
+      <div class="span-2"><FormError /></div>
+      <div class="field">
+        <span class="label">Tipo</span>
+        <Select name="tipo" value="compra" label="Tipo" options={tipos} />
+      </div>
+      <div class="field">
+        <span class="label">Fecha</span>
+        <DatePicker name="fecha" label="Fecha" />
+      </div>
+      <div class="field" data-show="compra">
+        <span class="label">Proveedor</span>
+        <Select name="proveedor" searchable creatable createLabel="Crear proveedor" placeholder="Elegir proveedor" options={[]} />
+      </div>
+      <div class="field" data-show="compra venta">
+        <span class="label">Moneda</span>
+        <Select name="moneda" value="COP" label="Moneda" options={MONEDAS} />
+      </div>
+      <div class="field" data-show="compra venta" data-tasa hidden>
+        <label for="mv-tasa" data-tasa-label>Tasa de cambio</label>
+        <input id="mv-tasa" name="tasa" class="input tnum" type="text" inputmode="decimal" data-money placeholder="Ej. 4.000" />
+        <span class="hint">Cuántos pesos vale 1 unidad de esa moneda.</span>
+      </div>
+      <div class="field" data-show="traslado entrega devolucion venta ajuste_salida">
+        <span class="label">Sale de</span>
+        <Select name="origen" searchable placeholder="Elegir" options={[]} />
+      </div>
+      <div class="field" data-show="compra traslado entrega devolucion ajuste_entrada">
+        <span class="label">Entra a</span>
+        <Select name="destino" searchable placeholder="Elegir" options={[]} />
+      </div>
+      <div class="field" data-show="venta">
+        <label for="mv-curso">Curso</label>
+        <input id="mv-curso" name="curso" class="input" placeholder="Ej. Bogotá · 7–8 nov (vacío si es en la oficina)" />
+      </div>
+      <div class="field" data-show="venta">
+        <span class="label">¿Cómo pagó?</span>
+        <Select name="metodo" placeholder="Elegir cómo pagó" options={[]} />
+      </div>
+
+      <div class="field span-2">
+        <span class="label">Productos</span>
+        <div class="items" data-items>
+          <div class="item-row item-head caps">
+            <span>Producto</span><span class="num">Cantidad</span><span class="num" data-valor-label>Costo unitario</span><span class="num">Subtotal</span><span></span>
+          </div>
+        </div>
+        <div class="items-foot">
+          <button type="button" class="btn btn-ghost btn-sm" data-add-item><i class="bi bi-plus-lg" aria-hidden="true"></i>Agregar producto</button>
+          <span class="total" data-total-wrap>Total: <strong class="tnum" data-total>$ 0</strong></span>
+        </div>
+      </div>
+
+      <div class="field span-2">
+        <label for="mv-nota">Nota</label>
+        <textarea id="mv-nota" name="nota" class="textarea" rows="2" placeholder="Factura, motivo del ajuste…"></textarea>
+      </div>
+    </form>
+    <template data-item-tpl>
+      <div class="item-row" data-item>
+        <ds-select name="producto" searchable placeholder="Elegir producto" aria-label="Producto"></ds-select>
+        <input class="input tnum" type="text" inputmode="numeric" name="cantidad" placeholder="Cantidad" aria-label="Cantidad" />
+        <input class="input tnum" type="text" inputmode="decimal" name="valor" placeholder="0" aria-label="Valor unitario" data-valor data-money />
+        <span class="num tnum muted" data-subtotal>—</span>
+        <button type="button" class="btn btn-subtle btn-icon btn-sm" data-remove-item aria-label="Quitar"><i class="bi bi-x-lg" aria-hidden="true"></i></button>
+      </div>
+    </template>
+    <button slot="footer" type="button" class="btn btn-ghost" data-modal-close>Cancelar</button>
+    <button slot="footer" type="button" class="btn btn-primary" data-save>Guardar</button>
+  </Modal>
+
+  <!-- Detalle de un movimiento -->
+  <Modal id="det-modal" title="Movimiento" size="lg">
+    <dl class="det-info" data-det-info></dl>
+    <div class="table-wrap">
+      <table class="table">
+        <thead><tr><th>Producto</th><th class="num">Cantidad</th><th class="num" data-det-valor>Valor unit.</th><th class="num">Costo unit.</th></tr></thead>
+        <tbody data-det-items></tbody>
+      </table>
+    </div>
+    <button slot="footer" type="button" class="btn btn-danger" data-det-anular><i class="bi bi-x-circle" aria-hidden="true"></i>Anular</button>
+    <button slot="footer" type="button" class="btn btn-ghost" data-modal-close>Cerrar</button>
+  </Modal>
+</AppLayout>
+
+<style>
+  .ruta {
+    min-width: 220px;
+  }
+
+  [data-body] :global(tr[data-id]) {
+    cursor: pointer;
+  }
+
+  .items {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2);
+  }
+
+  .items :global(.item-row) {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 80px 120px 110px var(--control-h-sm);
+    align-items: center;
+    gap: var(--space-2);
+  }
+
+  .items-foot {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-2);
+  }
+
+  .total {
+    font-size: var(--text-sm);
+  }
+
+  [data-show][hidden],
+  [data-tasa][hidden] {
+    display: none;
+  }
+
+  .det-info {
+    display: grid;
+    grid-template-columns: max-content 1fr;
+    gap: var(--space-1) var(--space-4);
+    margin: 0 0 var(--space-3);
+    font-size: var(--text-sm);
+  }
+
+  .det-info :global(dt) {
+    color: var(--clr-text-muted);
+  }
+
+  .det-info :global(dd) {
+    margin: 0;
+  }
+
+  /* Celular: producto en su fila; cantidad, valor y subtotal debajo */
+  @media (max-width: 599.98px) {
+    .items :global(.item-row) {
+      grid-template-columns: 1fr 1fr var(--control-h-sm);
+    }
+
+    .items :global(.item-row > ds-select) {
+      grid-column: 1 / -1;
+    }
+
+    .items :global(.item-row [data-subtotal]),
+    .items :global(.item-row.item-head) {
+      display: none;
+    }
+
+    .items :global(.item-row) {
+      padding-bottom: var(--space-2);
+      border-bottom: 1px solid var(--clr-border);
+    }
+  }
+</style>
+
+<script>
+  import "../lib/ui";
+  import { initTableFilter } from "../lib/ui/table-filter";
+  import {
+    movimientos, bodegas, productos, proveedores, producto, cantidadEn, costoPromedio, registrarMovimiento, anularMovimiento, totalMov, unidadesMov, TIPO_MOV, REGLAS, MONEDA, type TipoMov, type Movimiento, rutaMov, metodosPago, metodoPago, esVentaOficina,
+  } from "../lib/store";
+  import { money, num, day, dayYear, esc, searchText, menu, dsSelect, intentar, parseNum, urlParam, today, flashRow, sinNuevo, opcionesLugar, type DsSelectEl } from "../lib/view";
+
+  const scope = document.querySelector<HTMLElement>("[data-table]")!;
+  const body = scope.querySelector<HTMLElement>("[data-body]")!;
+
+  // ── Lista ──
+  const de = (m: Movimiento) => rutaMov(m).de;
+  const a = (m: Movimiento) => rutaMov(m).a;
+  function render() {
+    const ms = movimientos();
+    body.innerHTML = ms
+      .map((m) => {
+        const t = TIPO_MOV[m.tipo];
+        const nombres = m.items.map((i) => producto(i.producto_id)?.nombre);
+        const extra = [esVentaOficina(m) ? "Oficina" : "", m.curso, metodoPago(m.metodo_pago_id)?.nombre, m.moneda !== MONEDA ? `${m.moneda} a ${num(m.tasa)}` : "", m.nota].filter(Boolean).join(" · ");
+        const acciones = [{ value: "ver", label: "Ver detalle", icon: "bi-eye" }, ...(m.anulado ? [] : [{ separator: true }, { value: "anular", label: "Anular", icon: "bi-x-circle", danger: true }])];
+        return `<tr data-row data-id="${m.id}" data-tipo="${m.tipo}" data-estado="${m.anulado ? "anulado" : "vigente"}"
+            data-ubicacion="${[m.origen_id, m.destino_id].filter(Boolean).join(" ")}" data-text="${esc(searchText(m.id, `#${m.id}`, t.label, m.curso, m.nota, de(m), a(m), ...nombres))}"
+            class="${m.anulado ? "anulado" : ""}">
+          <td class="tnum strong" data-sort-value="${m.id}">#${m.id}</td>
+          <td class="nowrap" data-sort-value="${m.fecha}">${day(m.fecha)}</td>
+          <td class="nowrap"><i class="bi ${t.icon} muted" aria-hidden="true"></i> ${t.label}${m.anulado ? ' <span class="badge danger">Anulado</span>' : ""}</td>
+          <td class="ruta">${esc(de(m))} <span class="muted">→</span> ${esc(a(m))}${extra ? `<p class="sub">${esc(extra)}</p>` : ""}</td>
+          <td class="num tnum" data-sort-value="${unidadesMov(m)}">${num(unidadesMov(m))}</td>
+          <td class="num tnum" data-sort-value="${totalMov(m)}">${money(totalMov(m))}</td>
+          <td class="nowrap">${esc(m.creado_por)}</td>
+          <td class="cell-actions">${menu(acciones)}</td>
+        </tr>`;
+      })
+      .join("");
+    const anulados = ms.filter((m) => m.anulado).length;
+    document.querySelector("[data-page-subtitle]")!.textContent = `${ms.length} registrados${anulados ? ` · ${anulados} ${anulados === 1 ? "anulado" : "anulados"}` : ""}`;
+    table.rescan();
+  }
+  dsSelect(scope, "#f-ubicacion").setOptions([
+    { value: "", label: "Todas las ubicaciones" },
+    ...opcionesLugar(bodegas()),
+  ]);
+  const table = initTableFilter(scope);
+  render();
+
+  // ── Formulario ──
+  const modal = document.getElementById("mov-modal")!;
+  const form = modal.querySelector<HTMLFormElement>("[data-mov-form]")!;
+  const sel = (name: string) => dsSelect(form, `ds-select[name=${name}]`);
+  const tipo = sel("tipo"), origen = sel("origen"), destino = sel("destino"), prov = sel("proveedor"), moneda = sel("moneda"), metodo = sel("metodo");
+  const fecha = form.querySelector<HTMLElement & { value: string }>("ds-date[name=fecha]")!;
+  const items = form.querySelector<HTMLElement>("[data-items]")!;
+  const tpl = modal.querySelector<HTMLTemplateElement>("[data-item-tpl]")!;
+  const valorLabel = form.querySelector<HTMLElement>("[data-valor-label]")!;
+  const tasaField = form.querySelector<HTMLElement>("[data-tasa]")!;
+  const totalEl = form.querySelector<HTMLElement>("[data-total]")!;
+  const rows = () => [...items.querySelectorAll<HTMLElement>("[data-item]")];
+  const t = () => tipo.value as TipoMov;
+  const conValor = () => t() === "compra" || t() === "venta";
+
+  const lugares = (tipos: ("bodega" | "monitor")[] | null) =>
+    bodegas()
+      .filter((b) => b.activa && tipos?.includes(b.tipo))
+      .map((b) => opcionesLugar([b], true)[0]!);
+
+  /** Productos: con origen, solo los que hay ahí (y cuántos). */
+  function productOptions() {
+    const o = origen.value && REGLAS[t()].origen ? origen.value : "";
+    return productos()
+      .filter((p) => p.activo)
+      .map((p) => {
+        const hay = o ? cantidadEn(o, p.id) : null;
+        return { value: p.id, label: p.nombre, hint: hay === null ? p.codigo : `Hay ${num(hay)}`, keywords: p.codigo, disabled: hay !== null && hay <= 0 };
+      })
+      .sort((x, y) => Number(x.disabled) - Number(y.disabled));
+  }
+
+  function recalc() {
+    let total = 0;
+    for (const r of rows()) {
+      const q = parseNum(r.querySelector<HTMLInputElement>("[name=cantidad]")!.value);
+      const v = parseNum(r.querySelector<HTMLInputElement>("[name=valor]")!.value);
+      const sub = conValor() ? q * v : 0;
+      total += sub;
+      r.querySelector<HTMLElement>("[data-subtotal]")!.textContent = conValor() && sub ? money(sub) : "—";
+    }
+    const tasa = moneda.value !== MONEDA ? parseNum(form.querySelector<HTMLInputElement>("[name=tasa]")!.value) : 1;
+    totalEl.textContent = !conValor() ? "—" : moneda.value !== MONEDA ? `${num(total)} ${moneda.value}${tasa ? ` = ${money(total * tasa)}` : ""}` : money(total);
+  }
+
+  function sync() {
+    const r = REGLAS[t()];
+    form.querySelectorAll<HTMLElement>("[data-show]").forEach((f) => (f.hidden = !f.dataset.show!.split(" ").includes(t())));
+    tasaField.hidden = !conValor() || moneda.value === MONEDA;
+    form.querySelector("[data-tasa-label]")!.textContent = `Tasa: 1 ${moneda.value} en pesos`;
+    // Origen y destino: solo los lugares que acepta el tipo
+    const keep = (s: DsSelectEl, opts: { value: string }[]) => {
+      s.setOptions(opts as never);
+      if (!opts.some((o) => o.value === s.value)) s.value = "";
+    };
+    keep(origen, lugares(r.origen));
+    keep(destino, lugares(r.destino));
+    valorLabel.textContent = t() === "venta" ? (moneda.value === MONEDA ? "Precio unit." : `Precio (${moneda.value})`) : t() === "compra" ? (moneda.value === MONEDA ? "Costo unit." : `Costo (${moneda.value})`) : "";
+    form.querySelector<HTMLElement>("[data-total-wrap]")!.hidden = !conValor();
+    const opts = productOptions();
+    rows().forEach((row) => {
+      const p = row.querySelector<DsSelectEl>("ds-select")!;
+      p.setOptions(opts);
+      const v = row.querySelector<HTMLInputElement>("[data-valor]")!;
+      v.style.visibility = conValor() ? "" : "hidden";
+      v.placeholder = t() === "venta" ? "Precio c/u" : "Costo c/u";
+    });
+    recalc();
+  }
+
+  function addItem() {
+    items.append(tpl.content.cloneNode(true));
+    const row = rows().at(-1)!;
+    const p = row.querySelector<DsSelectEl>("ds-select")!;
+    p.setOptions(productOptions());
+    const valor = row.querySelector<HTMLInputElement>("[data-valor]")!;
+    valor.style.visibility = conValor() ? "" : "hidden";
+    valor.placeholder = t() === "venta" ? "Precio c/u" : "Costo c/u";
+    // Venta: el precio de referencia del producto
+    p.addEventListener("change", () => {
+      const v = row.querySelector<HTMLInputElement>("[name=valor]")!;
+      if (t() === "venta" && !v.value && moneda.value === MONEDA) v.value = num(producto(p.value)?.precio_venta ?? 0);
+      if (t() === "compra" && !v.value && moneda.value === MONEDA) v.value = costoPromedio().get(p.value) ? num(Math.round(costoPromedio().get(p.value)!)) : "";
+      recalc();
+      row.querySelector<HTMLInputElement>("[name=cantidad]")!.focus();
+    });
+    return row;
+  }
+
+  function open(preset: { tipo?: string; origen?: string; destino?: string } = {}) {
+    form.reset();
+    rows().forEach((r) => r.remove());
+    tipo.value = preset.tipo && preset.tipo in TIPO_MOV ? preset.tipo : "compra";
+    fecha.value = today();
+    moneda.value = MONEDA;
+    prov.setOptions(proveedores().map((p) => ({ value: p.id, label: p.nombre })));
+    prov.value = "";
+    metodo.setOptions(metodosPago().filter((m) => m.activo).map((m) => ({ value: String(m.id), label: m.nombre })));
+    metodo.value = "";
+    sync();
+    if (preset.origen) origen.value = preset.origen;
+    if (preset.destino) destino.value = preset.destino;
+    addItem();
+    sync();
+    intentar(form, () => {});
+    window.ui.openModal("mov-modal");
+  }
+
+  tipo.addEventListener("change", sync);
+  moneda.addEventListener("change", sync);
+  origen.addEventListener("change", sync);
+  form.addEventListener("input", recalc);
+  form.querySelector("[data-add-item]")!.addEventListener("click", () => {
+    const row = addItem();
+    row.scrollIntoView({ block: "nearest", behavior: "smooth" });
+    row.querySelector<HTMLElement>(".select-trigger")?.focus({ preventScroll: true });
+  });
+  items.addEventListener("click", (e) => {
+    const btn = (e.target as HTMLElement).closest("[data-remove-item]");
+    if (!btn) return;
+    if (rows().length > 1) btn.closest("[data-item]")!.remove();
+    else btn.closest("[data-item]")!.querySelectorAll<HTMLInputElement>("input").forEach((i) => (i.value = ""));
+    recalc();
+  });
+  document.querySelector("[data-new]")!.addEventListener("click", () => open());
+
+  modal.querySelector("[data-save]")!.addEventListener("click", async () => {
+    let nuevo = 0;
+    const ok = await intentar(form, async () => {
+      // Proveedor nuevo: se crea en la misma operación
+      const nuevoProv = prov.value !== sinNuevo(prov.value);
+      const mov = await registrarMovimiento({
+        tipo: t(),
+        fecha: fecha.value,
+        origen_id: origen.value,
+        destino_id: destino.value,
+        proveedor_id: nuevoProv ? undefined : prov.value,
+        proveedor_nuevo: nuevoProv ? sinNuevo(prov.value) : undefined,
+        metodo_pago_id: metodo.value ? Number(metodo.value) : undefined,
+        curso: form.querySelector<HTMLInputElement>("[name=curso]")!.value,
+        moneda: moneda.value,
+        tasa: parseNum(form.querySelector<HTMLInputElement>("[name=tasa]")!.value),
+        nota: form.querySelector<HTMLTextAreaElement>("[name=nota]")!.value,
+        items: rows().map((r) => ({
+          producto_id: r.querySelector<DsSelectEl>("ds-select")!.value,
+          cantidad: parseNum(r.querySelector<HTMLInputElement>("[name=cantidad]")!.value),
+          valor_unitario: parseNum(r.querySelector<HTMLInputElement>("[name=valor]")!.value),
+        })),
+      });
+      nuevo = mov.id;
+      window.ui.toast(`Guardado: ${TIPO_MOV[mov.tipo].label.toLowerCase()} #${mov.id}`, { tone: "success" });
+    });
+    if (!ok) return;
+    window.ui.closeModal("mov-modal");
+    render();
+    flashRow(body.querySelector(`tr[data-id="${nuevo}"]`));
+  });
+
+  // ── Detalle y anular ──
+  const det = document.getElementById("det-modal")!;
+  let actual = 0;
+  function verDetalle(id: number) {
+    const m = movimientos().find((x) => x.id === id);
+    if (!m) return;
+    actual = id;
+    const t = TIPO_MOV[m.tipo];
+    det.querySelector("[data-modal-title]")!.textContent = `${t.label} #${m.id}${m.anulado ? " · anulado" : ""}`;
+    const info: [string, string | null | undefined][] = [
+      ["Fecha", dayYear(m.fecha)],
+      ["De", de(m)],
+      ["A", a(m)],
+      ["Vendido en", esVentaOficina(m) ? "Oficina" : undefined],
+      ["Curso", m.curso],
+      ["Pago", metodoPago(m.metodo_pago_id)?.nombre],
+      ["Moneda", m.moneda !== MONEDA ? `${m.moneda} · 1 ${m.moneda} = ${money(m.tasa)}` : undefined],
+      ["Total", money(totalMov(m))],
+      ["Hecho por", m.creado_por],
+      ["Nota", m.nota],
+    ];
+    det.querySelector("[data-det-info]")!.innerHTML = info
+      .filter(([, v]) => v)
+      .map(([k, v]) => `<dt>${k}</dt><dd>${esc(v)}</dd>`)
+      .join("");
+    const cv = m.tipo === "compra" || m.tipo === "venta";
+    det.querySelector<HTMLElement>("[data-det-valor]")!.textContent = m.tipo === "venta" ? "Precio unit." : m.tipo === "compra" ? `Costo (${m.moneda})` : "";
+    det.querySelector("[data-det-items]")!.innerHTML = m.items
+      .map(
+        (i) => `<tr><td class="strong">${esc(producto(i.producto_id)?.nombre)}</td><td class="num tnum">${num(i.cantidad)}</td>
+          <td class="num tnum">${cv ? (m.moneda === MONEDA ? money(i.valor_unitario) : num(i.valor_unitario)) : ""}</td><td class="num tnum">${money(i.costo_unitario)}</td></tr>`,
+      )
+      .join("");
+    det.querySelector<HTMLElement>("[data-det-anular]")!.hidden = m.anulado;
+    window.ui.openModal("det-modal");
+  }
+
+  async function anular(id: number) {
+    const ok = await window.ui.confirm({
+      tone: "danger",
+      title: `¿Anular el movimiento #${id}?`,
+      message: "Las cantidades vuelven a donde estaban. El movimiento queda en la lista marcado como anulado.",
+      confirmText: "Anular",
+    });
+    if (!ok) return false;
+    const done = await intentar(null, () => anularMovimiento(id), `Movimiento #${id} anulado`);
+    if (done) {
+      render();
+      flashRow(body.querySelector(`tr[data-id="${id}"]`));
+    }
+    return done;
+  }
+
+  det.querySelector("[data-det-anular]")!.addEventListener("click", async () => {
+    if (await anular(actual)) window.ui.closeModal("det-modal");
+  });
+  body.addEventListener("menu-select", (e) => {
+    const id = Number((e.target as HTMLElement).closest<HTMLElement>("tr[data-id]")?.dataset.id);
+    const { value } = (e as CustomEvent<{ value: string }>).detail;
+    if (value === "ver") verDetalle(id);
+    if (value === "anular") anular(id);
+  });
+  body.addEventListener("click", (e) => {
+    // Clic en la fila (fuera del menú): ver detalle
+    const row = (e.target as HTMLElement).closest<HTMLElement>("tr[data-id]");
+    if (row && !(e.target as HTMLElement).closest("ds-menu")) verDetalle(Number(row.dataset.id));
+  });
+
+  // Desde la dirección
+  const params = new URLSearchParams(location.search);
+  const q = params.get("q");
+  if (q) {
+    const input = scope.querySelector<HTMLInputElement>("[data-filter-q]")!;
+    input.value = q;
+    input.dispatchEvent(new Event("input"));
+  }
+  if (params.has("nuevo")) open({ tipo: params.get("nuevo") ?? "", origen: urlParam("origen"), destino: urlParam("destino") });
+  if (params.has("ver")) verDetalle(Number(params.get("ver")));
+  if (params.size) history.replaceState(null, "", location.pathname);
+</script>

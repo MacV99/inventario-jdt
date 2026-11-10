@@ -1,0 +1,115 @@
+---
+// Métodos de pago (admin, pedido de Leidy 2026-11-09): cómo paga el cliente (efectivo, Nequi, tarjeta…).
+// Se pueden agregar, renombrar y desactivar (los desactivados dejan de salir al vender; las ventas viejas los conservan).
+import AppLayout from "../layouts/AppLayout.astro";
+import PageHeader from "../components/ui/PageHeader.astro";
+import Modal from "../components/ui/Modal.astro";
+import FormError from "../components/ui/FormError.astro";
+---
+
+<AppLayout title="Métodos de pago">
+  <PageHeader title="Métodos de pago" subtitle=" ">
+    <button slot="actions" type="button" class="btn btn-primary" data-new><i class="bi bi-plus-lg" aria-hidden="true"></i>Nuevo método</button>
+  </PageHeader>
+
+  <section class="card card-list" data-table>
+    <div class="table-wrap">
+      <table class="table table-cards">
+        <thead>
+          <tr>
+            <th data-sort="text" data-card-title>Método</th>
+            <th class="num" data-sort="num">Ventas</th>
+            <th class="num" data-sort="num">Vendido</th>
+            <th data-sort="text">Estado</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody data-body></tbody>
+      </table>
+    </div>
+    <div class="empty" data-empty hidden>
+      <i class="bi bi-credit-card" aria-hidden="true"></i>
+      <p class="muted">Aún no hay métodos de pago.</p>
+    </div>
+  </section>
+
+  <Modal id="metodo-modal" title="Nuevo método de pago">
+    <form class="form-grid" data-form novalidate>
+      <div class="span-2"><FormError /></div>
+      <div class="field span-2">
+        <label for="mp-nombre">Nombre</label>
+        <input id="mp-nombre" name="nombre" class="input" placeholder="Ej. Tarjeta Visa · Datáfono Bancolombia" />
+      </div>
+    </form>
+    <button slot="footer" type="button" class="btn btn-ghost" data-modal-close>Cancelar</button>
+    <button slot="footer" type="button" class="btn btn-primary" data-save>Guardar</button>
+  </Modal>
+</AppLayout>
+
+<script>
+  import "../lib/ui";
+  import { initTableFilter } from "../lib/ui/table-filter";
+  import { metodosPago, metodoPago, ventas, totalMov, guardarMetodoPago } from "../lib/store";
+  import { money, esc, menu, intentar, flashRow } from "../lib/view";
+
+  const scope = document.querySelector<HTMLElement>("[data-table]")!;
+  const body = scope.querySelector<HTMLElement>("[data-body]")!;
+  const table = initTableFilter(scope);
+
+  function render() {
+    const vs = ventas();
+    const ms = metodosPago();
+    body.innerHTML = ms
+      .map((m) => {
+        const mias = vs.filter((v) => v.metodo_pago_id === m.id);
+        const total = mias.reduce((a, v) => a + totalMov(v), 0);
+        return `<tr data-row data-id="${m.id}">
+          <td class="strong">${esc(m.nombre)}</td>
+          <td class="num tnum">${mias.length}</td>
+          <td class="num tnum" data-sort-value="${total}">${money(total)}</td>
+          <td>${m.activo ? '<span class="dot success"></span> Activo' : '<span class="badge">Desactivado</span>'}</td>
+          <td class="cell-actions">${menu([
+            { value: "editar", label: "Renombrar", icon: "bi-pencil" },
+            m.activo ? { value: "desactivar", label: "Desactivar", icon: "bi-slash-circle" } : { value: "activar", label: "Activar", icon: "bi-check2" },
+          ])}</td>
+        </tr>`;
+      })
+      .join("");
+    document.querySelector("[data-page-subtitle]")!.textContent = `${ms.filter((m) => m.activo).length} activos`;
+    table.rescan();
+  }
+  render();
+
+  const modal = document.getElementById("metodo-modal")!;
+  const form = modal.querySelector<HTMLFormElement>("[data-form]")!;
+  const nombre = form.querySelector<HTMLInputElement>("[name=nombre]")!;
+  let editando = 0;
+  function open(id = 0) {
+    editando = id;
+    intentar(form, () => {});
+    const m = id ? metodoPago(id) : undefined;
+    modal.querySelector("[data-modal-title]")!.textContent = m ? `Renombrar ${m.nombre}` : "Nuevo método de pago";
+    nombre.value = m?.nombre ?? "";
+    window.ui.openModal("metodo-modal");
+    nombre.focus();
+  }
+  document.querySelector("[data-new]")!.addEventListener("click", () => open());
+  modal.querySelector("[data-save]")!.addEventListener("click", async () => {
+    let id = 0;
+    const ok = await intentar(form, async () => (id = await guardarMetodoPago({ id: editando || undefined, nombre: nombre.value })), editando ? "Método actualizado" : "Método creado");
+    if (!ok) return;
+    window.ui.closeModal("metodo-modal");
+    render();
+    flashRow(body.querySelector(`tr[data-id="${id}"]`));
+  });
+  body.addEventListener("menu-select", async (e) => {
+    const id = Number((e.target as HTMLElement).closest<HTMLElement>("tr[data-id]")!.dataset.id);
+    const { value } = (e as CustomEvent<{ value: string }>).detail;
+    if (value === "editar") return open(id);
+    const activo = value === "activar";
+    if (await intentar(null, () => guardarMetodoPago({ id, activo }), activo ? "Método activado" : "Método desactivado: ya no sale al vender")) {
+      render();
+      flashRow(body.querySelector(`tr[data-id="${id}"]`));
+    }
+  });
+</script>

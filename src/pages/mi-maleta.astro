@@ -1,0 +1,244 @@
+---
+// Mi maleta (monitor, pensado para celular): lo que tiene y registrar una venta con uno o varios productos.
+// El monitor no ve costos ni ganancias.
+import AppLayout from "../layouts/AppLayout.astro";
+import PageHeader from "../components/ui/PageHeader.astro";
+import StatCard from "../components/ui/StatCard.astro";
+import Select from "../components/ui/Select.astro";
+import Modal from "../components/ui/Modal.astro";
+import FormError from "../components/ui/FormError.astro";
+---
+
+<AppLayout title="Mi maleta" role="monitor">
+  <PageHeader title="Mi maleta" subtitle=" ">
+    <button slot="actions" type="button" class="btn btn-primary" data-new><i class="bi bi-plus-lg" aria-hidden="true"></i>Registrar venta</button>
+  </PageHeader>
+
+  <section class="card kpis" data-kpis>
+    <StatCard label="Unidades" value="—" dataKey="unidades" />
+    <StatCard label="Por entregar" value="—" dataKey="debe" hint="Dinero de tus ventas que falta entregar" />
+  </section>
+
+  <section class="card card-list">
+    <div class="table-wrap">
+      <table class="table table-cards">
+        <thead>
+          <tr>
+            <th data-card-title>Producto</th>
+            <th class="num">Tengo</th>
+            <th class="num">Precio</th>
+          </tr>
+        </thead>
+        <tbody data-body></tbody>
+      </table>
+    </div>
+    <div class="empty" data-empty hidden>
+      <i class="bi bi-briefcase" aria-hidden="true"></i>
+      <p class="muted">Tu maleta está vacía. Pide mercancía a German o Leidy.</p>
+    </div>
+  </section>
+
+  <Modal id="venta-modal" title="Registrar venta" description="Sale de tu maleta.">
+    <form class="venta" data-form novalidate>
+      <FormError />
+      <div class="field">
+        <span class="label">Curso</span>
+        <Select name="curso" searchable creatable createLabel="Nuevo curso" placeholder="Elegir o escribir el curso" options={[]} />
+      </div>
+      <div class="field">
+        <span class="label">¿Cómo pagó?</span>
+        <Select name="metodo" placeholder="Elegir cómo pagó" options={[]} />
+      </div>
+      <div class="field">
+        <span class="label">¿Qué vendiste?</span>
+        <ul class="lineas" data-lineas></ul>
+      </div>
+      <p class="total">Total <strong class="tnum" data-total>$ 0</strong></p>
+    </form>
+    <button slot="footer" type="button" class="btn btn-ghost" data-modal-close>Cancelar</button>
+    <button slot="footer" type="button" class="btn btn-primary" data-save>Guardar venta</button>
+  </Modal>
+</AppLayout>
+
+<style>
+  .venta {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-3);
+  }
+
+  .lineas {
+    display: flex;
+    flex-direction: column;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  .lineas :global(li) {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+    gap: var(--space-1) var(--space-3);
+    padding: var(--space-2) 0;
+    border-bottom: 1px solid var(--clr-border);
+  }
+
+  .lineas :global(li:last-child) {
+    border-bottom: 0;
+  }
+
+  .lineas :global(li.on) .name {
+    font-weight: 700;
+  }
+
+  .lineas :global(.name) {
+    min-width: 0;
+  }
+
+  .lineas :global(.stepper-qty) {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-1);
+  }
+
+  .lineas :global(.stepper-qty .input) {
+    width: 52px;
+    text-align: center;
+  }
+
+  .lineas :global(.price) {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    grid-column: 1 / -1;
+    font-size: var(--text-xs);
+    color: var(--clr-text-muted);
+  }
+
+  .lineas :global(.price .input) {
+    width: 120px;
+    height: var(--control-h-sm);
+  }
+
+  .lineas :global(li:not(.on) .price) {
+    display: none;
+  }
+
+  .total {
+    display: flex;
+    justify-content: space-between;
+    margin: 0;
+    font-size: var(--text-md);
+  }
+</style>
+
+<script>
+  import "../lib/ui";
+  import { setKpi } from "../lib/ui/kpi";
+  import { stockFilas, maletaDe, producto, cuadre, ventas, registrarMovimiento, metodosPago, yo } from "../lib/store";
+  import { money, num, esc, intentar, dsSelect, parseNum, sinNuevo } from "../lib/view";
+
+  const maleta = maletaDe(yo().id) ?? { id: "", ciudad: "", pais: "" };
+  const body = document.querySelector<HTMLElement>("[data-body]")!;
+  const kpis = document.querySelector<HTMLElement>("[data-kpis]")!;
+  const mias = () => stockFilas().filter((f) => f.bodega_id === maleta.id).map((f) => ({ ...f, p: producto(f.producto_id)! }));
+
+  function render() {
+    const items = mias();
+    body.innerHTML = items
+      .map(
+        (i) => `<tr>
+          <td><span class="strong">${esc(i.p.nombre)}</span><p class="sub">${esc(i.p.codigo)}</p></td>
+          <td class="num tnum strong">${num(i.cantidad)}</td>
+          <td class="num tnum">${money(i.p.precio_venta)}</td>
+        </tr>`,
+      )
+      .join("");
+    document.querySelector<HTMLElement>("[data-empty]")!.hidden = items.length > 0;
+    const c = cuadre().find((x) => x.bodega.id === maleta.id);
+    setKpi(kpis, "unidades", num(c?.unidades ?? 0));
+    setKpi(kpis, "debe", money(c?.debe ?? 0));
+    document.querySelector("[data-page-subtitle]")!.textContent = [maleta.ciudad, maleta.pais].filter(Boolean).join(" · ");
+    document.querySelector<HTMLButtonElement>("[data-new]")!.disabled = !items.length;
+  }
+  render();
+
+  // ── Venta: una fila por producto de la maleta con − cantidad + y precio ──
+  const modal = document.getElementById("venta-modal")!;
+  const form = modal.querySelector<HTMLFormElement>("[data-form]")!;
+  const curso = dsSelect(form, "ds-select[name=curso]");
+  const metodo = dsSelect(form, "ds-select[name=metodo]");
+  metodo.setOptions(metodosPago().filter((m) => m.activo).map((m) => ({ value: String(m.id), label: m.nombre })));
+  const lineas = form.querySelector<HTMLElement>("[data-lineas]")!;
+  const totalEl = form.querySelector<HTMLElement>("[data-total]")!;
+
+  function recalc() {
+    let total = 0;
+    lineas.querySelectorAll<HTMLElement>("li").forEach((li) => {
+      const q = parseNum(li.querySelector<HTMLInputElement>("[name=cantidad]")!.value);
+      li.classList.toggle("on", q > 0);
+      total += q * parseNum(li.querySelector<HTMLInputElement>("[name=precio]")!.value);
+    });
+    totalEl.textContent = money(total);
+  }
+
+  function open() {
+    intentar(form, () => {});
+    const anteriores = [...new Set(ventas().filter((v) => v.origen_id === maleta.id && v.curso).map((v) => v.curso!))];
+    curso.setOptions(anteriores.map((c) => ({ value: c, label: c })));
+    curso.value = anteriores[0] ?? "";
+    metodo.value = "";
+    lineas.innerHTML = mias()
+      .map(
+        (i) => `<li data-producto="${i.p.id}" data-max="${i.cantidad}">
+          <span class="name">${esc(i.p.nombre)}<span class="sub"> · tienes ${num(i.cantidad)}</span></span>
+          <span class="stepper-qty">
+            <button type="button" class="btn btn-subtle btn-icon btn-sm" data-step="-1" aria-label="Uno menos"><i class="bi bi-dash-lg" aria-hidden="true"></i></button>
+            <input class="input tnum" name="cantidad" type="text" inputmode="numeric" value="0" aria-label="Cantidad de ${esc(i.p.nombre)}" />
+            <button type="button" class="btn btn-subtle btn-icon btn-sm" data-step="1" aria-label="Uno más"><i class="bi bi-plus-lg" aria-hidden="true"></i></button>
+          </span>
+          <label class="price">Precio c/u <input class="input tnum" name="precio" type="text" inputmode="numeric" data-money value="${num(i.p.precio_venta)}" /></label>
+        </li>`,
+      )
+      .join("");
+    recalc();
+    window.ui.openModal("venta-modal");
+  }
+
+  lineas.addEventListener("click", (e) => {
+    const btn = (e.target as HTMLElement).closest<HTMLElement>("[data-step]");
+    if (!btn) return;
+    const li = btn.closest<HTMLElement>("li")!;
+    const input = li.querySelector<HTMLInputElement>("[name=cantidad]")!;
+    input.value = String(Math.min(Number(li.dataset.max), Math.max(0, parseNum(input.value) + Number(btn.dataset.step))));
+    recalc();
+  });
+  lineas.addEventListener("input", recalc);
+  document.querySelector("[data-new]")!.addEventListener("click", open);
+
+  modal.querySelector("[data-save]")!.addEventListener("click", async () => {
+    const items = [...lineas.querySelectorAll<HTMLElement>("li")]
+      .map((li) => ({
+        producto_id: li.dataset.producto!,
+        cantidad: parseNum(li.querySelector<HTMLInputElement>("[name=cantidad]")!.value),
+        valor_unitario: parseNum(li.querySelector<HTMLInputElement>("[name=precio]")!.value),
+      }))
+      .filter((i) => i.cantidad > 0);
+    const ok = await intentar(form, async () => {
+      if (!curso.value) throw new Error("Elige o escribe el curso.");
+      if (!metodo.value) throw new Error("Elige cómo pagó el cliente.");
+      const mov = await registrarMovimiento({
+        tipo: "venta",
+        origen_id: maleta.id,
+        curso: sinNuevo(curso.value),
+        metodo_pago_id: Number(metodo.value),
+        items,
+      });
+      window.ui.toast(`Venta guardada: ${money(items.reduce((a, i) => a + i.cantidad * i.valor_unitario, 0))} (#${mov.id})`, { tone: "success" });
+    });
+    if (!ok) return;
+    window.ui.closeModal("venta-modal");
+    render();
+  });
+</script>

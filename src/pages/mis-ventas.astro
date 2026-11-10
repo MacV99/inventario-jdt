@@ -1,0 +1,64 @@
+---
+// Mis ventas (monitor): lo que ha vendido de su maleta y lo que ya entregó en dinero.
+import AppLayout from "../layouts/AppLayout.astro";
+import PageHeader from "../components/ui/PageHeader.astro";
+import StatCard from "../components/ui/StatCard.astro";
+---
+
+<AppLayout title="Mis ventas" role="monitor">
+  <PageHeader title="Mis ventas" />
+
+  <section class="card kpis" data-kpis>
+    <StatCard label="Vendido" value="—" dataKey="vendido" />
+    <StatCard label="Entregado" value="—" dataKey="entregado" />
+    <StatCard label="Por entregar" value="—" dataKey="debe" />
+  </section>
+
+  <section class="card card-list">
+    <div class="table-wrap">
+      <table class="table table-cards">
+        <thead>
+          <tr>
+            <th>Fecha</th>
+            <th data-card-title>Curso</th>
+            <th>Productos</th>
+            <th>Pago</th>
+            <th class="num">Total</th>
+          </tr>
+        </thead>
+        <tbody data-body></tbody>
+      </table>
+    </div>
+    <div class="empty" data-empty hidden>
+      <i class="bi bi-receipt" aria-hidden="true"></i>
+      <p class="muted">Aún no tienes ventas.</p>
+    </div>
+  </section>
+</AppLayout>
+
+<script>
+  import "../lib/ui";
+  import { setKpi } from "../lib/ui/kpi";
+  import { ventas, maletaDe, producto, totalMov, cuadre, metodoPago, yo } from "../lib/store";
+  import { money, num, day, esc } from "../lib/view";
+
+  const maleta = maletaDe(yo().id) ?? { id: "" };
+  const mias = ventas().filter((v) => v.origen_id === maleta.id);
+  document.querySelector("[data-body]")!.innerHTML = mias
+    .map(
+      (v) => `<tr>
+        <td class="nowrap">${day(v.fecha)}</td>
+        <td class="strong">${esc(v.curso ?? "—")}</td>
+        <td>${esc(v.items.map((i) => `${num(i.cantidad)} ${producto(i.producto_id)?.nombre}`).join(" · "))}</td>
+        <td class="muted">${esc(metodoPago(v.metodo_pago_id)?.nombre ?? "—")}</td>
+        <td class="num tnum strong">${money(totalMov(v))}</td>
+      </tr>`,
+    )
+    .join("");
+  document.querySelector<HTMLElement>("[data-empty]")!.hidden = mias.length > 0;
+  const c = cuadre().find((x) => x.bodega.id === maleta.id);
+  const kpis = document.querySelector<HTMLElement>("[data-kpis]")!;
+  setKpi(kpis, "vendido", money(c?.vendido ?? 0));
+  setKpi(kpis, "entregado", money(c?.entregado ?? 0));
+  setKpi(kpis, "debe", money(c?.debe ?? 0));
+</script>

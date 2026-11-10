@@ -1,0 +1,17 @@
+---
+// Avatar con iniciales (gris). Sin fotos por ahora: consistente y compacto.
+interface Props {
+  name: string;
+  size?: "sm" | "md" | "lg";
+}
+
+const { name, size = "md" } = Astro.props;
+const initials = name
+  .split(/\s+/)
+  .filter(Boolean)
+  .slice(0, 2)
+  .map((w) => w[0]!.toUpperCase())
+  .join("");
+---
+
+<span class:list={["avatar", size]} aria-hidden="true">{initials}</span>

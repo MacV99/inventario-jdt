@@ -1,0 +1,18 @@
+---
+// Envoltorio de <ds-date> (lib/ui/date.ts). Nunca <input type="date"> nativo: su calendario no se puede estilizar.
+interface Props {
+  name?: string;
+  value?: string; // ISO AAAA-MM-DD
+  min?: string;
+  /** Días a resaltar desde el elegido (2 = curso de dos días). */
+  span?: number;
+  placeholder?: string;
+  label?: string;
+  id?: string;
+  class?: string;
+}
+
+const { name, value, min, span, placeholder, label, id, class: className } = Astro.props;
+---
+
+<ds-date id={id} class={className} name={name} value={value} min={min} span={span} placeholder={placeholder} aria-label={label ?? placeholder}></ds-date>

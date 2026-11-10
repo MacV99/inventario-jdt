@@ -1,0 +1,219 @@
+---
+// Reportes (admin): ventas y ganancias por fecha, monitor, curso, país y producto. Descarga a Excel lo que se ve.
+import AppLayout from "../layouts/AppLayout.astro";
+import PageHeader from "../components/ui/PageHeader.astro";
+import StatCard from "../components/ui/StatCard.astro";
+import Select from "../components/ui/Select.astro";
+
+const grupos = [
+  { value: "", label: "Detalle" },
+  { value: "monitor", label: "Quién vendió" },
+  { value: "curso", label: "Curso" },
+  { value: "pais", label: "País" },
+  { value: "producto", label: "Producto" },
+  { value: "pago", label: "Pago" },
+];
+---
+
+<AppLayout title="Reportes">
+  <PageHeader title="Reportes" subtitle="Ventas y ganancias">
+    <button slot="actions" type="button" class="btn btn-ghost" data-excel><i class="bi bi-file-earmark-spreadsheet" aria-hidden="true"></i>Descargar Excel</button>
+  </PageHeader>
+
+  <section class="card kpis" data-kpis>
+    <StatCard label="Vendido" value="—" dataKey="total" />
+    <StatCard label="Costo" value="—" dataKey="costo" />
+    <StatCard label="Ganancia" value="—" dataKey="ganancia" />
+    <StatCard label="Unidades" value="—" dataKey="cantidad" />
+  </section>
+
+  <section class="card card-list" data-table>
+    <div class="toolbar">
+      <Select value="" filter="mes" label="Periodo" options={[{ value: "", label: "Todo" }]} id="f-mes" />
+      <Select value="" searchable filter="monitor" label="Quién vendió" options={[{ value: "", label: "Monitores y oficina" }]} id="f-monitor" />
+      <Select value="" searchable filter="curso" label="Curso" options={[{ value: "", label: "Todos los cursos" }]} id="f-curso" />
+      <Select value="" filter="pais" label="País" options={[{ value: "", label: "Todos los países" }]} id="f-pais" />
+      <Select value="" searchable filter="producto" label="Producto" options={[{ value: "", label: "Todos los productos" }]} id="f-producto" />
+      <Select value="" filter="pago" label="Pago" options={[{ value: "", label: "Todos los pagos" }]} id="f-pago" />
+    </div>
+    <div class="group-row">
+      <span class="caps">Ver por</span>
+      <div class="segmented" role="group" aria-label="Ver por">
+        {grupos.map((g, i) => <button type="button" data-group-by={g.value} aria-pressed={i === 0 ? "true" : "false"}>{g.label}</button>)}
+      </div>
+    </div>
+
+    <div class="table-wrap" data-detalle>
+      <table class="table table-cards">
+        <thead>
+          <tr>
+            <th data-sort="text">Fecha</th>
+            <th data-sort="text" data-card-title>Producto</th>
+            <th data-sort="text">Vendió</th>
+            <th data-sort="text">Curso</th>
+            <th class="num" data-sort="num">Cant.</th>
+            <th class="num" data-sort="num">Vendido</th>
+            <th class="num" data-sort="num">Costo</th>
+            <th class="num" data-sort="num">Ganancia</th>
+          </tr>
+        </thead>
+        <tbody data-body></tbody>
+      </table>
+    </div>
+
+    <div class="table-wrap" data-agrupado hidden>
+      <table class="table table-cards">
+        <thead>
+          <tr>
+            <th data-card-title data-group-title>Monitor</th>
+            <th class="num">Unidades</th>
+            <th class="num">Vendido</th>
+            <th class="num">Costo</th>
+            <th class="num">Ganancia</th>
+            <th class="num">Margen</th>
+          </tr>
+        </thead>
+        <tbody data-group-body></tbody>
+      </table>
+    </div>
+
+    <div class="empty" data-empty hidden>
+      <i class="bi bi-bar-chart-line" aria-hidden="true"></i>
+      <p class="muted">No hay ventas con ese filtro.</p>
+    </div>
+  </section>
+</AppLayout>
+
+<style>
+  .group-row {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: var(--space-2);
+  }
+</style>
+
+<script>
+  import "../lib/ui";
+  import { initTableFilter } from "../lib/ui/table-filter";
+  import { setKpi } from "../lib/ui/kpi";
+  import { ventas, bodega, producto, metodoPago } from "../lib/store";
+  import { money, num, day, esc, dsSelect, uniqueOptions, monthLabel, descargarCsv } from "../lib/view";
+
+  // Una fila por producto vendido (v_ventas)
+  const lineas = ventas().flatMap((v) => {
+    const b = bodega(v.origen_id)!;
+    return v.items.map((i) => {
+      const total = i.cantidad * i.valor_unitario * v.tasa;
+      const costo = i.cantidad * i.costo_unitario;
+      return {
+        fecha: v.fecha,
+        mes: v.fecha.slice(0, 7),
+        monitor: b.tipo === "monitor" ? b.nombre.replace(/^Maleta /, "") : `Oficina · ${b.nombre}`,
+        pago: metodoPago(v.metodo_pago_id)?.nombre ?? "Sin dato",
+        pais: b.pais || "—",
+        curso: v.curso ?? "Sin curso",
+        producto: producto(i.producto_id)?.nombre ?? "—",
+        cantidad: i.cantidad,
+        total,
+        costo,
+        ganancia: total - costo,
+      };
+    });
+  });
+  type Linea = (typeof lineas)[number];
+
+  const scope = document.querySelector<HTMLElement>("[data-table]")!;
+  const set = (id: string, todos: string, values: string[]) => dsSelect(scope, id).setOptions([{ value: "", label: todos }, ...uniqueOptions(values)]);
+  dsSelect(scope, "#f-mes").setOptions([
+    { value: "", label: "Todo" },
+    ...[...new Set(lineas.map((l) => l.mes))].sort().reverse().map((m) => ({ value: m, label: monthLabel(m) })),
+  ]);
+  set("#f-monitor", "Monitores y oficina", lineas.map((l) => l.monitor));
+  set("#f-pago", "Todos los pagos", lineas.map((l) => l.pago));
+  set("#f-curso", "Todos los cursos", lineas.map((l) => l.curso));
+  set("#f-pais", "Todos los países", lineas.map((l) => l.pais));
+  set("#f-producto", "Todos los productos", lineas.map((l) => l.producto));
+
+  scope.querySelector("[data-body]")!.innerHTML = lineas
+    .map(
+      (l, i) => `<tr data-row data-i="${i}" data-mes="${l.mes}" data-monitor="${esc(l.monitor)}" data-curso="${esc(l.curso)}" data-pais="${esc(l.pais)}" data-producto="${esc(l.producto)}" data-pago="${esc(l.pago)}">
+        <td class="nowrap" data-sort-value="${l.fecha}">${day(l.fecha)}</td>
+        <td class="strong">${esc(l.producto)}</td>
+        <td>${esc(l.monitor)}<p class="sub">${esc(l.pais)}</p></td>
+        <td>${esc(l.curso)}<p class="sub">${esc(l.pago)}</p></td>
+        <td class="num tnum">${num(l.cantidad)}</td>
+        <td class="num tnum" data-sort-value="${l.total}">${money(l.total)}</td>
+        <td class="num tnum muted" data-sort-value="${l.costo}">${money(l.costo)}</td>
+        <td class="num tnum strong" data-sort-value="${l.ganancia}">${money(l.ganancia)}</td>
+      </tr>`,
+    )
+    .join("");
+
+  // ── Agrupado ──
+  let groupBy = "";
+  let visibles: Linea[] = lineas;
+  const grupos = (ls: Linea[]) => {
+    const m = new Map<string, { cantidad: number; total: number; costo: number; ganancia: number }>();
+    for (const l of ls) {
+      const k = String(l[groupBy as keyof Linea]);
+      const g = m.get(k) ?? { cantidad: 0, total: 0, costo: 0, ganancia: 0 };
+      g.cantidad += l.cantidad;
+      g.total += l.total;
+      g.costo += l.costo;
+      g.ganancia += l.ganancia;
+      m.set(k, g);
+    }
+    return [...m].sort((a, b) => b[1].total - a[1].total);
+  };
+  function pintarGrupos() {
+    const det = scope.querySelector<HTMLElement>("[data-detalle]")!;
+    const agr = scope.querySelector<HTMLElement>("[data-agrupado]")!;
+    det.hidden = !!groupBy;
+    agr.hidden = !groupBy || !visibles.length;
+    if (!groupBy) return;
+    scope.querySelector("[data-group-title]")!.textContent = scope.querySelector(`[data-group-by="${groupBy}"]`)!.textContent!;
+    scope.querySelector("[data-group-body]")!.innerHTML = grupos(visibles)
+      .map(
+        ([k, g]) => `<tr><td class="strong">${esc(k)}</td><td class="num tnum">${num(g.cantidad)}</td><td class="num tnum">${money(g.total)}</td>
+          <td class="num tnum muted">${money(g.costo)}</td><td class="num tnum strong">${money(g.ganancia)}</td>
+          <td class="num tnum">${g.total ? Math.round((g.ganancia / g.total) * 100) : 0}%</td></tr>`,
+      )
+      .join("");
+  }
+  scope.querySelectorAll<HTMLButtonElement>("[data-group-by]").forEach((b) =>
+    b.addEventListener("click", () => {
+      groupBy = b.dataset.groupBy!;
+      scope.querySelectorAll("[data-group-by]").forEach((x) => x.setAttribute("aria-pressed", String(x === b)));
+      pintarGrupos();
+    }),
+  );
+
+  const kpis = document.querySelector<HTMLElement>("[data-kpis]")!;
+  const table = initTableFilter(scope, ({ visible }) => {
+    visibles = visible.map((r) => lineas[Number(r.dataset.i)]!);
+    const sum = (k: "total" | "costo" | "ganancia" | "cantidad") => visibles.reduce((a, l) => a + l[k], 0);
+    const total = sum("total");
+    setKpi(kpis, "total", money(total));
+    setKpi(kpis, "costo", money(sum("costo")));
+    setKpi(kpis, "ganancia", money(sum("ganancia")), total ? `${Math.round((sum("ganancia") / total) * 100)}%` : "", "up");
+    setKpi(kpis, "cantidad", num(sum("cantidad")));
+    pintarGrupos();
+  });
+  table.rescan();
+
+  // Excel: lo que se ve con los filtros activos (detalle o agrupado). CSV con «;» que Excel abre directo
+  document.querySelector("[data-excel]")!.addEventListener("click", () => {
+    const rows: (string | number)[][] = groupBy
+      ? [
+          [scope.querySelector(`[data-group-by="${groupBy}"]`)!.textContent!, "Unidades", "Vendido", "Costo", "Ganancia"],
+          ...grupos(visibles).map(([k, g]) => [k, g.cantidad, Math.round(g.total), Math.round(g.costo), Math.round(g.ganancia)]),
+        ]
+      : [
+          ["Fecha", "Producto", "Vendió", "País", "Curso", "Pago", "Cantidad", "Vendido", "Costo", "Ganancia"],
+          ...visibles.map((l) => [l.fecha, l.producto, l.monitor, l.pais, l.curso, l.pago, l.cantidad, Math.round(l.total), Math.round(l.costo), Math.round(l.ganancia)]),
+        ];
+    descargarCsv(`ventas-jdt${groupBy ? `-por-${groupBy}` : ""}.csv`, rows);
+    window.ui.toast("Archivo descargado", { tone: "success" });
+  });
+</script>

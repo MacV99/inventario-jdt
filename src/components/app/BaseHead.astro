@@ -1,0 +1,75 @@
+---
+// <head> común a AppLayout y AuthLayout: meta, íconos y tema antes del primer pintado (copiado del panel de jdt-call-center).
+interface Props {
+  title: string;
+}
+
+const { title } = Astro.props;
+---
+
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<link rel="icon" type="image/png" href="/img/logo-96.png" />
+<link rel="apple-touch-icon" href="/img/apple-touch-icon.png" />
+<meta name="theme-color" content="#18191c" data-theme-color />
+<!-- Letra e íconos propios y recortados (scripts/fuentes.py): sin pedir nada a otros sitios -->
+<link rel="preload" href="/fonts/montserrat.woff2" as="font" type="font/woff2" crossorigin />
+<link rel="preload" href="/fonts/bi.woff2" as="font" type="font/woff2" crossorigin />
+<title>{title} · Inventario JDT</title>
+
+<!-- Precarga (igual al call-center): al dejar el mouse sobre un enlace (o tocarlo), Chrome y Edge piden la página
+     antes del clic y la abren casi al instante. -->
+<script type="speculationrules" is:inline>
+  {
+    "prefetch": [
+      {
+        "where": { "and": [{ "href_matches": "/*" }, { "not": { "selector_matches": "[data-no-prefetch]" } }] },
+        "eagerness": "moderate"
+      }
+    ]
+  }
+</script>
+
+<!-- Pantalla de carga (Splash.astro): solo la primera vez que se abre la app en esta pestaña -->
+<script is:inline>
+  try {
+    if (sessionStorage.getItem("jdt-splash")) document.documentElement.dataset.splashSeen = "";
+  } catch {}
+</script>
+
+<!-- Menú lateral retraído (solo íconos): se recuerda por navegador y se aplica antes de pintar -->
+<script is:inline>
+  try {
+    if (localStorage.getItem("jdt-nav") === "collapsed") document.documentElement.dataset.nav = "collapsed";
+  } catch {}
+</script>
+
+<!-- Tema antes del primer pintado (sin parpadeo). Preferencia: system por defecto. -->
+<script is:inline>
+  (() => {
+    const KEY = "jdt-theme";
+    const root = document.documentElement;
+    const mq = matchMedia("(prefers-color-scheme: dark)");
+    let pref = "system";
+    try {
+      pref = localStorage.getItem(KEY) || "system";
+    } catch {}
+    const BAR = { light: "#f7f7f8", dark: "#18191c" };
+    const apply = () => {
+      root.dataset.theme = pref === "system" ? (mq.matches ? "dark" : "light") : pref;
+      document.querySelector("meta[data-theme-color]")?.setAttribute("content", BAR[root.dataset.theme]);
+    };
+    apply();
+    mq.addEventListener("change", apply);
+    window.__theme = {
+      get: () => pref,
+      set: (value) => {
+        pref = value;
+        try {
+          localStorage.setItem(KEY, value);
+        } catch {}
+        apply();
+      },
+    };
+  })();
+</script>

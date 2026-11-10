@@ -1,0 +1,61 @@
+---
+// KPI compacto: label arriba, valor + delta en una línea. Se agrupan en .kpis (una sola tarjeta).
+interface Props {
+  label: string;
+  value: string | number;
+  delta?: string;
+  trend?: "up" | "down" | "flat";
+  /** Clave para actualizar valor/delta desde JS: [data-kpi="clave"] y [data-kpi-delta="clave"]. */
+  dataKey?: string;
+  hint?: string;
+}
+
+const { label, value, delta, trend = "flat", dataKey, hint } = Astro.props;
+---
+
+<article class="kpi" title={hint}>
+  <p class="caps">{label}</p>
+  <p class="line">
+    <span class="value" data-kpi={dataKey}>{value}</span>
+    {(delta || dataKey) && <span class:list={["delta", trend]} data-kpi-delta={dataKey}>{delta}</span>}
+  </p>
+</article>
+
+<style>
+  .kpi {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+    padding: var(--space-3) var(--space-4);
+  }
+
+  .line {
+    display: flex;
+    align-items: baseline;
+    flex-wrap: wrap;
+    column-gap: var(--space-2);
+  }
+
+  .value {
+    font-size: var(--text-2xl);
+    font-weight: 700;
+    line-height: 1.15;
+    color: var(--clr-text);
+    font-variant-numeric: tabular-nums;
+  }
+
+  .delta {
+    font-size: var(--text-xs);
+    font-weight: 600;
+    color: var(--clr-text-muted);
+  }
+
+  .delta.up {
+    color: var(--clr-success);
+  }
+
+  .delta.down {
+    color: var(--clr-danger);
+  }
+</style>

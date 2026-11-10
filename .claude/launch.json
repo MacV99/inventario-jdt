@@ -1,0 +1,27 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "inventario",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": [
+        "run",
+        "dev"
+      ],
+      "port": 4322
+    },
+    {
+      "name": "inventario-prueba",
+      "runtimeExecutable": "npx",
+      "runtimeArgs": [
+        "astro",
+        "preview",
+        "--port",
+        "4333",
+        "--outDir",
+        "dist-prueba"
+      ],
+      "port": 4333
+    }
+  ]
+}

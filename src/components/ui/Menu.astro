@@ -1,0 +1,47 @@
+---
+// Menú de acciones (lib/ui/menu.ts). Para acciones secundarias de una fila/tarjeta.
+// items: { value, label, icon?, danger?, separator? }
+interface Item {
+  value?: string;
+  label?: string;
+  icon?: string;
+  danger?: boolean;
+  separator?: boolean;
+}
+
+interface Props {
+  items: Item[];
+  label?: string;
+  icon?: string;
+  align?: "start" | "end";
+}
+
+const { items, label = "Más acciones", icon = "bi-three-dots", align = "end" } = Astro.props;
+---
+
+<ds-menu>
+  <button
+    type="button"
+    class="btn btn-subtle btn-icon btn-sm"
+    data-trigger
+    aria-haspopup="menu"
+    aria-expanded="false"
+    aria-label={label}
+  >
+    <i class={`bi ${icon}`} aria-hidden="true"></i>
+  </button>
+  <div class="popover" role="menu" data-align={align} hidden>
+    {
+      items.map((item) =>
+        item.separator ? (
+          <div class="option-sep" role="separator" />
+        ) : (
+          <button type="button" role="menuitem" class:list={["option", { danger: item.danger }]} data-value={item.value}>
+            {item.icon && <i class={`bi ${item.icon}`} aria-hidden="true" />}
+            {item.label}
+          </button>
+        ),
+      )
+    }
+  </div>
+</ds-menu>

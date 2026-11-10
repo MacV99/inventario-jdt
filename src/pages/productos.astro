@@ -1,0 +1,260 @@
+---
+// Productos (admin): crear, editar, desactivar y ver el costo promedio (se actualiza solo con cada compra).
+import AppLayout from "../layouts/AppLayout.astro";
+import PageHeader from "../components/ui/PageHeader.astro";
+import Select from "../components/ui/Select.astro";
+import Modal from "../components/ui/Modal.astro";
+import FormError from "../components/ui/FormError.astro";
+---
+
+<AppLayout title="Productos">
+  <PageHeader title="Productos" subtitle=" ">
+    <button slot="actions" type="button" class="btn btn-primary" data-new><i class="bi bi-plus-lg" aria-hidden="true"></i>Nuevo producto</button>
+  </PageHeader>
+
+  <section class="card card-list" data-table>
+    <div class="toolbar">
+      <label class="input-icon grow">
+        <i class="bi bi-search" aria-hidden="true"></i>
+        <input class="input" type="search" placeholder="Buscar producto o código…" aria-label="Buscar" data-filter-q />
+      </label>
+      <Select value="activo" filter="estado" label="Estado" options={[{ value: "activo", label: "Activos" }, { value: "inactivo", label: "Inactivos" }, { value: "", label: "Todos" }]} />
+    </div>
+    <div class="table-wrap">
+      <table class="table table-cards">
+        <thead>
+          <tr>
+            <th data-sort="text" data-card-title>Producto</th>
+            <th class="num" data-sort="num" title="Se actualiza solo con cada compra">Costo promedio</th>
+            <th class="num" data-sort="num">Precio de venta</th>
+            <th class="num" data-sort="num">Margen</th>
+            <th class="num" data-sort="num">En existencia</th>
+            <th class="num" data-sort="num">Mínimo</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody data-body></tbody>
+      </table>
+    </div>
+    <div class="empty" data-empty hidden>
+      <i class="bi bi-tags" aria-hidden="true"></i>
+      <p class="muted">Ningún producto coincide.</p>
+    </div>
+  </section>
+
+  <Modal id="prod-modal" title="Nuevo producto" description="El costo no se escribe: se calcula solo con las compras.">
+    <form class="form-grid" data-form novalidate>
+      <div class="span-2"><FormError /></div>
+      <div class="field span-2">
+        <label for="pr-nombre">Nombre</label>
+        <input id="pr-nombre" name="nombre" class="input" placeholder="Ej. Libro Método JDT" />
+      </div>
+      <div class="field">
+        <label for="pr-codigo">Código</label>
+        <input id="pr-codigo" name="codigo" class="input" placeholder="Ej. LIB-003" />
+      </div>
+      <div class="field">
+        <label for="pr-unidad">Unidad</label>
+        <input id="pr-unidad" name="unidad" class="input" placeholder="und" />
+      </div>
+      <div class="field">
+        <label for="pr-precio">Precio de venta</label>
+        <input id="pr-precio" name="precio" class="input tnum" type="text" inputmode="numeric" data-money placeholder="0" />
+      </div>
+      <div class="field">
+        <label for="pr-min">Avisar cuando queden menos de</label>
+        <input id="pr-min" name="minimo" class="input tnum" type="text" inputmode="numeric" placeholder="0" />
+        <span class="hint">En cada bodega.</span>
+      </div>
+    </form>
+    <button slot="footer" type="button" class="btn btn-ghost" data-modal-close>Cancelar</button>
+    <button slot="footer" type="button" class="btn btn-primary" data-save>Guardar</button>
+  </Modal>
+  <!-- Historial del producto: entradas, salidas y saldo después de cada movimiento -->
+  <Modal id="kardex-modal" title="Historial" size="lg">
+    <div class="kardex-bar">
+      <Select value="" searchable label="Ubicación" options={[{ value: "", label: "Toda la empresa" }]} id="k-ubicacion" />
+      <span class="muted small" data-k-resumen></span>
+    </div>
+    <div class="table-wrap kardex">
+      <table class="table">
+        <thead>
+          <tr>
+            <th>Fecha</th>
+            <th>Movimiento</th>
+            <th>De → A</th>
+            <th class="num">Entra</th>
+            <th class="num">Sale</th>
+            <th class="num">Saldo</th>
+            <th class="num" data-k-costo>Costo prom.</th>
+          </tr>
+        </thead>
+        <tbody data-k-body></tbody>
+      </table>
+    </div>
+    <div class="empty" data-k-empty hidden>
+      <i class="bi bi-clock-history" aria-hidden="true"></i>
+      <p class="muted">Sin movimientos aquí.</p>
+    </div>
+    <button slot="footer" type="button" class="btn btn-ghost" data-modal-close>Cerrar</button>
+  </Modal>
+</AppLayout>
+
+<style>
+  .kardex-bar {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: var(--space-3);
+    margin-bottom: var(--space-2);
+  }
+
+  .kardex {
+    max-height: 55dvh;
+  }
+
+  .kardex :global(td:nth-child(3)) {
+    min-width: 200px;
+  }
+
+  [data-body] :global(tr[data-id]) {
+    cursor: pointer;
+  }
+</style>
+
+<script>
+  import "../lib/ui";
+  import { initTableFilter } from "../lib/ui/table-filter";
+  import { productos, producto, stockFilas, costoPromedio, guardarProducto, setActivo, kardex, bodegas, rutaMov, TIPO_MOV } from "../lib/store";
+  import { money, num, day, esc, searchText, menu, intentar, parseNum, dsSelect, flashRow, opcionesLugar } from "../lib/view";
+
+  const scope = document.querySelector<HTMLElement>("[data-table]")!;
+  const body = scope.querySelector<HTMLElement>("[data-body]")!;
+  const table = initTableFilter(scope);
+  table.set("estado", "activo");
+
+  function render() {
+    const costos = costoPromedio();
+    const filas = stockFilas();
+    const ps = productos();
+    body.innerHTML = ps
+      .map((p) => {
+        const costo = costos.get(p.id) ?? 0;
+        const total = filas.filter((f) => f.producto_id === p.id).reduce((a, f) => a + f.cantidad, 0);
+        const margen = p.precio_venta ? Math.round(((p.precio_venta - costo) / p.precio_venta) * 100) : 0;
+        const acciones = [
+          { value: "editar", label: "Editar", icon: "bi-pencil" },
+          { value: "historial", label: "Ver historial", icon: "bi-clock-history" },
+          { separator: true },
+          p.activo ? { value: "desactivar", label: "Desactivar", icon: "bi-slash-circle", danger: true } : { value: "activar", label: "Activar", icon: "bi-check2-circle" },
+        ];
+        return `<tr data-row data-id="${p.id}" data-estado="${p.activo ? "activo" : "inactivo"}" data-text="${esc(searchText(p.nombre, p.codigo))}">
+          <td><span class="strong">${esc(p.nombre)}</span>${p.activo ? "" : ' <span class="badge">Inactivo</span>'}<p class="sub">${esc(p.codigo || "Sin código")} · ${esc(p.unidad)}</p></td>
+          <td class="num tnum" data-sort-value="${costo}">${costo ? money(costo) : '<span class="muted">Sin compras</span>'}</td>
+          <td class="num tnum" data-sort-value="${p.precio_venta}">${money(p.precio_venta)}</td>
+          <td class="num tnum" data-sort-value="${margen}">${costo ? `${margen}%` : "—"}</td>
+          <td class="num tnum" data-sort-value="${total}">${num(total)}</td>
+          <td class="num tnum muted" data-sort-value="${p.stock_minimo}">${num(p.stock_minimo)}</td>
+          <td class="cell-actions">${menu(acciones)}</td>
+        </tr>`;
+      })
+      .join("");
+    const activos = ps.filter((p) => p.activo).length;
+    document.querySelector("[data-page-subtitle]")!.textContent = `${activos} ${activos === 1 ? "producto activo" : "productos activos"}`;
+    table.rescan();
+  }
+  render();
+
+  // ── Crear / editar ──
+  const modal = document.getElementById("prod-modal")!;
+  const form = modal.querySelector<HTMLFormElement>("[data-form]")!;
+  const field = (n: string) => form.querySelector<HTMLInputElement>(`[name=${n}]`)!;
+  let editando = "";
+  function open(id = "") {
+    editando = id;
+    const p = id ? producto(id) : undefined;
+    form.reset();
+    intentar(form, () => {});
+    modal.querySelector("[data-modal-title]")!.textContent = p ? `Editar ${p.nombre}` : "Nuevo producto";
+    field("nombre").value = p?.nombre ?? "";
+    field("codigo").value = p?.codigo ?? "";
+    field("unidad").value = p?.unidad ?? "und";
+    field("precio").value = p ? num(p.precio_venta) : "";
+    field("minimo").value = p ? String(p.stock_minimo) : "";
+    window.ui.openModal("prod-modal");
+    field("nombre").focus();
+  }
+  document.querySelector("[data-new]")!.addEventListener("click", () => open());
+  modal.querySelector("[data-save]")!.addEventListener("click", async () => {
+    let id = "";
+    const ok = await intentar(
+      form,
+      async () =>
+        (id = await guardarProducto({
+          id: editando || undefined,
+          nombre: field("nombre").value,
+          codigo: field("codigo").value,
+          unidad: field("unidad").value.trim() || "und",
+          precio_venta: parseNum(field("precio").value),
+          stock_minimo: parseNum(field("minimo").value),
+        })),
+      editando ? "Producto actualizado" : "Producto creado",
+    );
+    if (!ok) return;
+    window.ui.closeModal("prod-modal");
+    render();
+    flashRow(body.querySelector(`tr[data-id="${id}"]`));
+  });
+
+  body.addEventListener("menu-select", async (e) => {
+    const id = (e.target as HTMLElement).closest<HTMLElement>("tr[data-id]")!.dataset.id!;
+    const { value } = (e as CustomEvent<{ value: string }>).detail;
+    if (value === "editar") open(id);
+    if (value === "historial") verHistorial(id);
+    if (value === "desactivar" || value === "activar") {
+      await intentar(null, () => setActivo("producto", id, value === "activar"), value === "activar" ? "Producto activado" : "Producto desactivado: ya no sale para elegir");
+      render();
+    }
+  });
+
+  // ── Historial (kárdex) ──
+  const km = document.getElementById("kardex-modal")!;
+  const kUbic = dsSelect(km, "#k-ubicacion");
+  let kProd = "";
+  function pintarHistorial() {
+    const filas = kardex(kProd, kUbic.value);
+    const enEmpresa = !kUbic.value;
+    km.querySelector<HTMLElement>("[data-k-costo]")!.hidden = !enEmpresa;
+    km.querySelector("[data-k-body]")!.innerHTML = filas
+      .map(
+        (f) => `<tr>
+          <td class="nowrap">${day(f.mov.fecha)}</td>
+          <td class="nowrap"><a href="/movimientos?ver=${f.mov.id}">#${f.mov.id}</a> ${TIPO_MOV[f.mov.tipo].label}</td>
+          <td>${esc(rutaMov(f.mov).de)} <span class="muted">→</span> ${esc(rutaMov(f.mov).a)}</td>
+          <td class="num tnum">${f.entra ? `+${num(f.entra)}` : f.mueve ? `<span class="muted" title="Se movió dentro de la empresa">${num(f.mueve)}</span>` : ""}</td>
+          <td class="num tnum">${f.sale ? `−${num(f.sale)}` : ""}</td>
+          <td class="num tnum strong">${num(f.saldo)}</td>
+          ${enEmpresa ? `<td class="num tnum">${money(f.costo)}</td>` : ""}
+        </tr>`,
+      )
+      .join("");
+    km.querySelector<HTMLElement>("[data-k-empty]")!.hidden = filas.length > 0;
+    km.querySelector("[data-k-resumen]")!.textContent = filas.length ? `Hoy: ${num(filas[0]!.saldo)} ${producto(kProd)!.unidad}` : "";
+  }
+  kUbic.addEventListener("change", pintarHistorial);
+  function verHistorial(id: string) {
+    kProd = id;
+    km.querySelector("[data-modal-title]")!.textContent = `Historial · ${producto(id)!.nombre}`;
+    kUbic.setOptions([
+      { value: "", label: "Toda la empresa" },
+      ...opcionesLugar(bodegas()),
+    ]);
+    kUbic.value = "";
+    pintarHistorial();
+    window.ui.openModal("kardex-modal");
+  }
+  body.addEventListener("click", (e) => {
+    const row = (e.target as HTMLElement).closest<HTMLElement>("tr[data-id]");
+    if (row && !(e.target as HTMLElement).closest("ds-menu")) verHistorial(row.dataset.id!);
+  });
+</script>

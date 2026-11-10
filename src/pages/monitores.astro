@@ -1,0 +1,208 @@
+---
+// Monitores (admin): qué tiene cada uno en su maleta, qué vendió y cuánto dinero debe entregar.
+import AppLayout from "../layouts/AppLayout.astro";
+import PageHeader from "../components/ui/PageHeader.astro";
+import StatCard from "../components/ui/StatCard.astro";
+import Modal from "../components/ui/Modal.astro";
+import Select from "../components/ui/Select.astro";
+import FormError from "../components/ui/FormError.astro";
+---
+
+<AppLayout title="Monitores">
+  <PageHeader title="Monitores" subtitle="Maletas, ventas y dinero por entregar" />
+
+  <section class="card kpis" data-kpis>
+    <StatCard label="Monitores" value="—" dataKey="monitores" />
+    <StatCard label="Valor en maletas" value="—" dataKey="valor" hint="Al costo promedio" />
+    <StatCard label="Vendido" value="—" dataKey="vendido" />
+    <StatCard label="Por recibir" value="—" dataKey="debe" />
+  </section>
+
+  <section class="card card-list" data-table>
+    <div class="toolbar">
+      <label class="input-icon grow">
+        <i class="bi bi-search" aria-hidden="true"></i>
+        <input class="input" type="search" placeholder="Buscar monitor o ciudad…" aria-label="Buscar" data-filter-q />
+      </label>
+    </div>
+    <div class="table-wrap">
+      <table class="table table-cards">
+        <thead>
+          <tr>
+            <th data-sort="text" data-card-title>Monitor</th>
+            <th class="num" data-sort="num">En maleta</th>
+            <th class="num" data-sort="num">Valor maleta</th>
+            <th class="num" data-sort="num">Vendido</th>
+            <th class="num" data-sort="num">Entregó</th>
+            <th class="num" data-sort="num">Debe</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody data-body></tbody>
+      </table>
+    </div>
+    <div class="empty" data-empty hidden>
+      <i class="bi bi-briefcase" aria-hidden="true"></i>
+      <p class="muted">Ningún monitor coincide. Se agregan aprobando usuarios como monitor.</p>
+    </div>
+  </section>
+
+  <Modal id="maleta-modal" title="Maleta" size="lg">
+    <div class="tabs" role="tablist" aria-label="Detalle del monitor">
+      <button class="tab" role="tab" aria-selected="true" data-tab="tiene">Tiene</button>
+      <button class="tab" role="tab" aria-selected="false" data-tab="ventas">Ventas</button>
+      <button class="tab" role="tab" aria-selected="false" data-tab="pagos">Dinero entregado</button>
+    </div>
+    <div class="table-wrap" data-panel="tiene">
+      <table class="table">
+        <thead><tr><th>Producto</th><th class="num">Cantidad</th><th class="num">Precio</th><th class="num">Valor al costo</th></tr></thead>
+        <tbody data-m-tiene></tbody>
+      </table>
+    </div>
+    <div class="table-wrap" data-panel="ventas" hidden>
+      <table class="table">
+        <thead><tr><th>Fecha</th><th>Curso</th><th>Productos</th><th class="num">Total</th></tr></thead>
+        <tbody data-m-ventas></tbody>
+      </table>
+    </div>
+    <div class="table-wrap" data-panel="pagos" hidden>
+      <table class="table">
+        <thead><tr><th>Fecha</th><th>Nota</th><th>Recibió</th><th class="num">Valor</th></tr></thead>
+        <tbody data-m-pagos></tbody>
+      </table>
+    </div>
+    <button slot="footer" type="button" class="btn btn-ghost" data-modal-close>Cerrar</button>
+  </Modal>
+
+  <Modal id="dinero-modal" title="Dinero recibido" description="Lo que el monitor entrega de sus ventas.">
+    <form class="form-grid" data-form novalidate>
+      <div class="span-2"><FormError /></div>
+      <div class="field span-2">
+        <label for="dn-valor">Valor recibido</label>
+        <input id="dn-valor" name="valor" class="input tnum" type="text" inputmode="numeric" data-money placeholder="0" />
+        <span class="hint" data-debe-hint></span>
+      </div>
+      <div class="field span-2">
+        <span class="label">¿Cómo lo entregó?</span>
+        <Select name="metodo" placeholder="Elegir (opcional)" options={[]} />
+      </div>
+      <div class="field span-2">
+        <label for="dn-nota">Nota</label>
+        <input id="dn-nota" name="nota" class="input" placeholder="Ej. Transferencia Bancolombia" />
+      </div>
+    </form>
+    <button slot="footer" type="button" class="btn btn-ghost" data-modal-close>Cancelar</button>
+    <button slot="footer" type="button" class="btn btn-primary" data-save>Guardar</button>
+  </Modal>
+</AppLayout>
+
+<script>
+  import "../lib/ui";
+  import { initTableFilter } from "../lib/ui/table-filter";
+  import { setKpi } from "../lib/ui/kpi";
+  import { cuadre, stockFilas, bodega, producto, ventas, pagos, totalMov, registrarPago, metodosPago } from "../lib/store";
+  import { money, num, day, esc, searchText, menu, avatar, intentar, parseNum, flashRow, dsSelect } from "../lib/view";
+
+  const scope = document.querySelector<HTMLElement>("[data-table]")!;
+  const body = scope.querySelector<HTMLElement>("[data-body]")!;
+  const kpis = document.querySelector<HTMLElement>("[data-kpis]")!;
+  const table = initTableFilter(scope);
+  const nombre = (id: string) => bodega(id)!.nombre.replace(/^Maleta /, "");
+
+  function render() {
+    const filas = cuadre().filter((c) => c.bodega.activa);
+    body.innerHTML = filas
+      .map((f) => {
+        const n = nombre(f.bodega.id);
+        return `<tr data-row data-id="${f.bodega.id}" data-text="${esc(searchText(n, f.bodega.ciudad, f.bodega.pais))}">
+          <td><span class="who">${avatar(n)}<span><span class="strong">${esc(n)}</span><p class="sub">${esc([f.bodega.ciudad, f.bodega.pais].filter(Boolean).join(" · ") || "Sin ciudad")}</p></span></span></td>
+          <td class="num tnum" data-sort-value="${f.unidades}">${num(f.unidades)} und</td>
+          <td class="num tnum" data-sort-value="${f.valor}">${money(f.valor)}</td>
+          <td class="num tnum" data-sort-value="${f.vendido}">${money(f.vendido)}<p class="sub">${num(f.vendidas)} und</p></td>
+          <td class="num tnum" data-sort-value="${f.entregado}">${money(f.entregado)}</td>
+          <td class="num tnum strong nowrap" data-sort-value="${f.debe}">${f.debe > 0 ? '<span class="dot warning" title="Tiene dinero por entregar"></span> ' : ""}${money(f.debe)}</td>
+          <td class="cell-actions">${menu([
+            { value: "maleta", label: "Ver maleta y ventas", icon: "bi-briefcase" },
+            { value: "entregar", label: "Entregarle mercancía", icon: "bi-box-arrow-right" },
+            { value: "devolucion", label: "Recibir devolución", icon: "bi-box-arrow-in-left" },
+            { value: "dinero", label: "Registrar dinero recibido", icon: "bi-cash" },
+          ])}</td>
+        </tr>`;
+      })
+      .join("");
+    const sum = (k: "valor" | "vendido" | "debe") => filas.reduce((a, f) => a + f[k], 0);
+    setKpi(kpis, "monitores", filas.length);
+    setKpi(kpis, "valor", money(sum("valor")));
+    setKpi(kpis, "vendido", money(sum("vendido")));
+    setKpi(kpis, "debe", money(sum("debe")));
+    table.rescan();
+  }
+  render();
+
+  // ── Maleta, ventas y pagos de un monitor ──
+  const esto = (rows: string[], cols: number, vacio: string) => rows.join("") || `<tr><td colspan="${cols}" class="muted">${vacio}</td></tr>`;
+  function verMaleta(id: string) {
+    const m = document.getElementById("maleta-modal")!;
+    m.querySelector("[data-modal-title]")!.textContent = `Maleta de ${nombre(id)}`;
+    m.querySelector("[data-m-tiene]")!.innerHTML = esto(
+      stockFilas()
+        .filter((f) => f.bodega_id === id)
+        .map((f) => `<tr><td class="strong">${esc(producto(f.producto_id)?.nombre)}</td><td class="num tnum">${num(f.cantidad)}</td><td class="num tnum">${money(producto(f.producto_id)!.precio_venta)}</td><td class="num tnum">${money(f.valor)}</td></tr>`),
+      4,
+      "La maleta está vacía.",
+    );
+    m.querySelector("[data-m-ventas]")!.innerHTML = esto(
+      ventas()
+        .filter((v) => v.origen_id === id)
+        .map((v) => `<tr><td class="nowrap">${day(v.fecha)}</td><td>${esc(v.curso ?? "—")}</td><td>${esc(v.items.map((i) => `${i.cantidad} ${producto(i.producto_id)?.nombre}`).join(" · "))}</td><td class="num tnum">${money(totalMov(v))}</td></tr>`),
+      4,
+      "Sin ventas.",
+    );
+    m.querySelector("[data-m-pagos]")!.innerHTML = esto(
+      pagos()
+        .filter((p) => p.bodega_id === id)
+        .map((p) => `<tr><td class="nowrap">${day(p.fecha)}</td><td>${esc(p.nota ?? "—")}</td><td>${esc(p.creado_por)}</td><td class="num tnum">${money(p.valor)}</td></tr>`),
+      4,
+      "Todavía no ha entregado dinero.",
+    );
+    // Siempre abre en «Tiene» (sin tocar la dirección)
+    m.querySelectorAll<HTMLElement>("[data-tab]").forEach((t) => t.setAttribute("aria-selected", String(t.dataset.tab === "tiene")));
+    m.querySelectorAll<HTMLElement>("[data-panel]").forEach((p) => (p.hidden = p.dataset.panel !== "tiene"));
+    window.ui.openModal("maleta-modal");
+  }
+
+  // ── Dinero recibido ──
+  const dinero = document.getElementById("dinero-modal")!;
+  const form = dinero.querySelector<HTMLFormElement>("[data-form]")!;
+  const metodo = dsSelect(form, "ds-select[name=metodo]");
+  metodo.setOptions(metodosPago().filter((m) => m.activo).map((m) => ({ value: String(m.id), label: m.nombre })));
+  let actual = "";
+  function abrirDinero(id: string) {
+    actual = id;
+    form.reset();
+    metodo.value = "";
+    intentar(form, () => {});
+    const debe = cuadre().find((c) => c.bodega.id === id)!.debe;
+    dinero.querySelector("[data-modal-title]")!.textContent = `Dinero recibido de ${nombre(id)}`;
+    dinero.querySelector("[data-debe-hint]")!.textContent = `Debe ${money(debe)}.`;
+    window.ui.openModal("dinero-modal");
+    form.querySelector<HTMLInputElement>("[name=valor]")!.focus();
+  }
+  dinero.querySelector("[data-save]")!.addEventListener("click", async () => {
+    const valor = parseNum(form.querySelector<HTMLInputElement>("[name=valor]")!.value);
+    const nota = form.querySelector<HTMLInputElement>("[name=nota]")!.value;
+    if (!(await intentar(form, () => registrarPago(actual, valor, nota, metodo.value ? Number(metodo.value) : undefined), `Recibido ${money(valor)} de ${nombre(actual)}`))) return;
+    window.ui.closeModal("dinero-modal");
+    render();
+    flashRow(body.querySelector(`tr[data-id="${actual}"]`));
+  });
+
+  body.addEventListener("menu-select", (e) => {
+    const id = (e.target as HTMLElement).closest<HTMLElement>("tr[data-id]")!.dataset.id!;
+    const { value } = (e as CustomEvent<{ value: string }>).detail;
+    if (value === "maleta") verMaleta(id);
+    if (value === "entregar") location.href = `/movimientos?nuevo=entrega&destino=${id}`;
+    if (value === "devolucion") location.href = `/movimientos?nuevo=devolucion&origen=${id}`;
+    if (value === "dinero") abrirDinero(id);
+  });
+</script>

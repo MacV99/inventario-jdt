@@ -1,0 +1,93 @@
+---
+// Estructura de todas las pantallas con menú (igual al panel de jdt-call-center).
+import "../styles/icons.css";
+import "../styles/project.css";
+import "../styles/global.css";
+import BaseHead from "../components/app/BaseHead.astro";
+import Splash from "../components/app/Splash.astro";
+import Sidebar from "../components/app/Sidebar.astro";
+
+interface Props {
+  title: string;
+  /** Menú que se muestra: admin (todo) o monitor (su maleta). */
+  role?: "admin" | "monitor";
+}
+
+const { title, role = "admin" } = Astro.props;
+---
+
+<html lang="es" data-theme="light">
+  <head>
+    <BaseHead title={title} />
+  </head>
+
+  <body data-rol={role}>
+    <Splash />
+    <div class="shell">
+      <Sidebar current={Astro.url.pathname} title={title} role={role} />
+      <main>
+        <div class="callout demo-note" role="status" data-demo-note hidden>
+          <i class="bi bi-eye" aria-hidden="true"></i>
+          <div>Prueba local con datos de ejemplo: lo que hagas se guarda solo en este navegador.</div>
+          <button type="button" class="btn btn-ghost btn-sm" data-demo-reset>Reiniciar ejemplo</button>
+        </div>
+        <slot />
+      </main>
+    </div>
+  </body>
+</html>
+
+<script>
+  import "../lib/ui";
+  import { reiniciar, DEMO } from "../lib/store";
+  import { initMoneyInputs } from "../lib/view";
+
+  initMoneyInputs();
+  document.querySelector<HTMLElement>("[data-demo-note]")!.hidden = !DEMO;
+
+  document.querySelector("[data-demo-reset]")?.addEventListener("click", async () => {
+    const ok = await window.ui.confirm({
+      tone: "warning",
+      title: "¿Reiniciar el ejemplo?",
+      message: "Se borra lo que registraste y vuelven los datos de ejemplo del principio.",
+      confirmText: "Reiniciar",
+    });
+    if (!ok) return;
+    reiniciar();
+    window.ui.flash("Ejemplo reiniciado", "success");
+    location.reload();
+  });
+</script>
+
+<style>
+  .shell {
+    display: grid;
+    grid-template-columns: 1fr;
+    grid-template-rows: auto 1fr;
+    min-height: 100dvh;
+  }
+
+  main {
+    padding: var(--space-4) var(--space-3);
+    display: flex;
+    flex-direction: column;
+    gap: var(--page-gap);
+    min-width: 0;
+  }
+
+  @media (min-width: 900px) {
+    .shell {
+      grid-template-columns: var(--sidebar-w) 1fr;
+      grid-template-rows: auto;
+      transition: grid-template-columns 0.2s var(--ease);
+    }
+
+    :global(:root[data-nav="collapsed"]) .shell {
+      grid-template-columns: var(--sidebar-w-collapsed) 1fr;
+    }
+
+    main {
+      padding: var(--page-pad) var(--page-pad);
+    }
+  }
+</style>

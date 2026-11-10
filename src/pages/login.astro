@@ -1,0 +1,93 @@
+---
+// Entrar con usuario y contraseña (igual al login del panel de jdt-call-center). Sin correos: el superadmin crea
+// los usuarios en la pantalla Usuarios. Quien también usa el call center entra con su misma cuenta.
+import AuthLayout from "../layouts/AuthLayout.astro";
+import PasswordInput from "../components/ui/PasswordInput.astro";
+---
+
+<AuthLayout title="Iniciar sesión">
+  <div class="auth-form">
+    <div class="auth-head">
+      <h1>Iniciar sesión</h1>
+      <p class="muted">Entra con tu usuario y contraseña.</p>
+    </div>
+
+    <div class="callout danger" role="alert" data-login-error hidden>
+      <i class="bi bi-exclamation-octagon" aria-hidden="true"></i>
+      <div data-login-error-text></div>
+    </div>
+
+    <form class="auth-form" data-login-form novalidate>
+      <div class="field">
+        <label for="lg-user">Usuario</label>
+        <input id="lg-user" name="user" class="input" autocomplete="username" autocapitalize="none" spellcheck="false" placeholder="tu usuario" autofocus />
+        <span class="error-text" data-error="user" hidden></span>
+      </div>
+      <div class="field">
+        <label for="lg-password" class="label">Contraseña</label>
+        <PasswordInput id="lg-password" name="password" autocomplete="current-password" />
+        <span class="error-text" data-error="password" hidden></span>
+      </div>
+      <button type="submit" class="btn btn-primary" data-submit>Entrar</button>
+    </form>
+    <p class="auth-links muted small">¿No tienes usuario? Pídeselo a un admin.</p>
+  </div>
+</AuthLayout>
+
+<script>
+  import { entrar, salir, rpc, haySesion } from "../lib/api";
+
+  const form = document.querySelector<HTMLFormElement>("[data-login-form]")!;
+  const errorBox = document.querySelector<HTMLElement>("[data-login-error]")!;
+  const fieldError = (name: string, msg: string) => {
+    const el = form.querySelector<HTMLElement>(`[data-error="${name}"]`)!;
+    el.textContent = msg;
+    el.hidden = !msg;
+    form.querySelector(`[name=${name}]`)!.setAttribute("aria-invalid", String(!!msg));
+    return !msg;
+  };
+  const formError = (msg: string) => {
+    errorBox.querySelector("[data-login-error-text]")!.textContent = msg;
+    errorBox.hidden = !msg;
+  };
+
+  const volver = new URLSearchParams(location.search).get("volver") ?? "";
+  const destino = (rol: string) => (rol === "monitor" ? (volver.startsWith("/mi") ? volver : "/mi-maleta") : volver.startsWith("/") && !volver.startsWith("/mi") && !volver.startsWith("/login") ? volver : "/");
+
+  // Por qué lo sacaron (sin acceso o desactivado)
+  const motivo = sessionStorage.getItem("jdt-inv-motivo");
+  if (motivo) {
+    sessionStorage.removeItem("jdt-inv-motivo");
+    formError(/acceso/.test(motivo) ? "Tu usuario no tiene acceso al inventario o está desactivado. Pídele acceso a un admin." : motivo);
+  }
+
+  // Ya tiene sesión: directo adentro
+  if (haySesion() && !motivo)
+    rpc<{ yo: { rol: string } }>("inv_datos")
+      .then((d) => location.replace(destino(d.yo.rol)))
+      .catch(() => {});
+
+  form.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    formError("");
+    const user = (form.user as HTMLInputElement).value.trim();
+    const password = (form.password as HTMLInputElement).value;
+    const ok = [fieldError("user", user ? "" : "Escribe tu usuario."), fieldError("password", password ? "" : "Escribe tu contraseña.")].every(Boolean);
+    if (!ok) return;
+    await window.ui.busy(form.querySelector<HTMLElement>("[data-submit]"), async () => {
+      try {
+        await entrar(user, password);
+        const d = await rpc<{ yo: { nombre: string; rol: string } }>("inv_datos");
+        window.ui.flash(`Hola, ${d.yo.nombre.split(" ")[0]}`, "success");
+        location.href = destino(d.yo.rol);
+      } catch (err) {
+        const msg = (err as Error).message;
+        if (/acceso/.test(msg)) {
+          await salir();
+          return formError("Tu usuario no tiene acceso al inventario o está desactivado. Pídele acceso a un admin.");
+        }
+        formError(msg);
+      }
+    });
+  });
+</script>

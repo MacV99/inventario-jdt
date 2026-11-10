@@ -1,0 +1,239 @@
+---
+// Usuarios (admin): sin correos, igual que Equipo en el call center. Se crean con usuario y contraseña.
+// Superadmin crea admins y monitores; admin crea monitores. Al crear un monitor se le crea su maleta.
+// Si el usuario ya existe en el call center, se le da acceso y entra con su misma contraseña (que se cambia allá).
+import AppLayout from "../layouts/AppLayout.astro";
+import PageHeader from "../components/ui/PageHeader.astro";
+import Select from "../components/ui/Select.astro";
+import Modal from "../components/ui/Modal.astro";
+import FormError from "../components/ui/FormError.astro";
+import PasswordInput from "../components/ui/PasswordInput.astro";
+---
+
+<AppLayout title="Usuarios">
+  <PageHeader title="Usuarios" subtitle=" ">
+    <button slot="actions" type="button" class="btn btn-primary" data-new><i class="bi bi-plus-lg" aria-hidden="true"></i>Nuevo usuario</button>
+  </PageHeader>
+
+  <section class="card card-list" data-table>
+    <div class="toolbar">
+      <label class="input-icon grow">
+        <i class="bi bi-search" aria-hidden="true"></i>
+        <input class="input" type="search" placeholder="Buscar nombre o usuario…" aria-label="Buscar" data-filter-q />
+      </label>
+      <Select value="" filter="rol" label="Rol" options={[{ value: "", label: "Todos los roles" }, { value: "monitor", label: "Monitores" }, { value: "admin", label: "Admins" }, { value: "inactivo", label: "Desactivados" }]} />
+    </div>
+    <div class="table-wrap">
+      <table class="table table-cards">
+        <thead>
+          <tr>
+            <th data-sort="text" data-card-title>Nombre</th>
+            <th data-sort="text">Usuario</th>
+            <th data-sort="text">Rol</th>
+            <th data-sort="text">Desde</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody data-body></tbody>
+      </table>
+    </div>
+    <div class="empty" data-empty hidden>
+      <i class="bi bi-people" aria-hidden="true"></i>
+      <p class="muted">Ningún usuario coincide.</p>
+    </div>
+  </section>
+
+  <Modal id="user-modal" title="Nuevo usuario" description="Entra con este usuario y contraseña. Sin correo.">
+    <form class="form-grid" data-form novalidate>
+      <div class="span-2"><FormError /></div>
+      <div class="field span-2">
+        <label for="us-nombre">Nombre y apellido</label>
+        <input id="us-nombre" name="nombre" class="input" placeholder="Ej. Carlos Rojas" />
+      </div>
+      <div class="field">
+        <label for="us-usuario">Usuario</label>
+        <input id="us-usuario" name="usuario" class="input" autocapitalize="none" spellcheck="false" autocomplete="off" placeholder="Ej. carlos" />
+      </div>
+      <div class="field">
+        <label for="us-pass">Contraseña</label>
+        <PasswordInput id="us-pass" name="password" autocomplete="new-password" placeholder="Mínimo 8 caracteres" />
+      </div>
+      <div class="field span-2" data-rol-field>
+        <span class="label">Rol</span>
+        <Select name="rol" value="monitor" options={[{ value: "monitor", label: "Monitor · vende de su maleta" }, { value: "admin", label: "Admin · maneja todo el inventario" }]} />
+      </div>
+      <div class="field" data-maleta>
+        <span class="label">País</span>
+        <Select name="pais" searchable creatable createLabel="Crear país" placeholder="Elegir país" options={[]} />
+      </div>
+      <div class="field" data-maleta>
+        <span class="label">Ciudad</span>
+        <Select name="ciudad" searchable creatable createLabel="Crear ciudad" placeholder="Elegir ciudad" options={[]} />
+      </div>
+      <p class="muted small span-2" data-maleta>Se le crea su maleta en esa ciudad.</p>
+    </form>
+    <button slot="footer" type="button" class="btn btn-ghost" data-modal-close>Cancelar</button>
+    <button slot="footer" type="button" class="btn btn-primary" data-save>Crear</button>
+  </Modal>
+
+  <Modal id="pass-modal" title="Cambiar contraseña">
+    <form class="form-grid" data-form novalidate>
+      <div class="span-2"><FormError /></div>
+      <div class="field span-2">
+        <label for="pw-pass">Contraseña nueva</label>
+        <PasswordInput id="pw-pass" name="password" autocomplete="new-password" placeholder="Mínimo 8 caracteres" />
+      </div>
+    </form>
+    <button slot="footer" type="button" class="btn btn-ghost" data-modal-close>Cancelar</button>
+    <button slot="footer" type="button" class="btn btn-primary" data-save>Cambiar</button>
+  </Modal>
+</AppLayout>
+
+<script>
+  import "../lib/ui";
+  import { initTableFilter } from "../lib/ui/table-filter";
+  import { perfiles, bodegas, maletaDe, crearUsuario, cambiarUsuario, yo, ROL, type Perfil } from "../lib/store";
+  import { day, esc, searchText, menu, avatar, intentar, dsSelect, uniqueOptions, flashRow, sinNuevo as texto } from "../lib/view";
+
+  const scope = document.querySelector<HTMLElement>("[data-table]")!;
+  const body = scope.querySelector<HTMLElement>("[data-body]")!;
+  const table = initTableFilter(scope);
+  const soySuper = yo().rol === "superadmin";
+
+  /** Qué puedo hacerle a cada uno: superadmin a todos (menos a sí mismo); admin solo a monitores. */
+  const acciones = (p: Perfil) => {
+    if (p.id === yo().id || p.rol === "superadmin") return [];
+    if (!soySuper && p.rol !== "monitor") return [];
+    if (!p.activo) return [{ value: "reactivar", label: "Reactivar", icon: "bi-arrow-counterclockwise" }];
+    return [
+      ...(soySuper ? [p.rol === "admin" ? { value: "monitor", label: "Cambiar a monitor", icon: "bi-person" } : { value: "admin", label: "Cambiar a admin", icon: "bi-shield-check" }] : []),
+      ...(p.propio ? [{ value: "clave", label: "Cambiar contraseña", icon: "bi-key" }] : []),
+      ...(maletaDe(p.id) ? [{ value: "maleta", label: "Ver su maleta", icon: "bi-briefcase" }] : []),
+      { separator: true },
+      { value: "desactivar", label: "Desactivar", icon: "bi-slash-circle", danger: true },
+    ];
+  };
+
+  function render() {
+    const ps = perfiles();
+    body.innerHTML = ps
+      .map((p) => {
+        const rol = !p.activo ? '<span class="badge">Desactivado</span>' : ROL[p.rol].label;
+        const a = acciones(p);
+        const cc = p.propio ? "" : ' <span class="muted small" data-tip="Entra con su misma cuenta del call center">· call center</span>';
+        return `<tr data-row data-id="${p.id}" data-rol="${p.activo ? (p.rol === "superadmin" ? "admin" : p.rol) : "inactivo"}" data-text="${esc(searchText(p.nombre, p.usuario))}">
+          <td><span class="who">${avatar(p.nombre)}<span class="strong">${esc(p.nombre)}</span>${p.id === yo().id ? ' <span class="muted small">(tú)</span>' : ""}</span></td>
+          <td class="muted">${esc(p.usuario)}${cc}</td>
+          <td>${rol}</td>
+          <td class="nowrap" data-sort-value="${p.creado}">${day(p.creado)}</td>
+          <td class="cell-actions">${a.length ? menu(a) : ""}</td>
+        </tr>`;
+      })
+      .join("");
+    document.querySelector("[data-page-subtitle]")!.textContent = `${ps.filter((p) => p.activo).length} activos`;
+    table.rescan();
+  }
+  render();
+
+  // ── Nuevo usuario ──
+  const modal = document.getElementById("user-modal")!;
+  const form = modal.querySelector<HTMLFormElement>("[data-form]")!;
+  const field = (n: string) => form.querySelector<HTMLInputElement>(`[name=${n}]`)!;
+  const rol = dsSelect(form, "ds-select[name=rol]");
+  const pais = dsSelect(form, "ds-select[name=pais]");
+  const ciudad = dsSelect(form, "ds-select[name=ciudad]");
+  form.querySelector<HTMLElement>("[data-rol-field]")!.hidden = !soySuper;
+  const opciones = () => {
+    pais.setOptions(uniqueOptions(bodegas().map((b) => b.pais)));
+    ciudad.setOptions(uniqueOptions(bodegas().filter((b) => !pais.value || b.pais === texto(pais.value)).map((b) => b.ciudad)));
+  };
+  const verMaleta = () => form.querySelectorAll<HTMLElement>("[data-maleta]").forEach((el) => (el.hidden = rol.value !== "monitor"));
+  pais.addEventListener("change", opciones);
+  rol.addEventListener("change", verMaleta);
+  // Usuario sugerido: primer nombre en minúsculas y sin tildes
+  field("nombre").addEventListener("input", () => {
+    if (field("usuario").dataset.tocado) return;
+    field("usuario").value = (field("nombre").value.trim().split(/\s+/)[0] ?? "").normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().replace(/[^a-z0-9._-]/g, "");
+  });
+  field("usuario").addEventListener("input", () => (field("usuario").dataset.tocado = "1"));
+
+  document.querySelector("[data-new]")!.addEventListener("click", () => {
+    intentar(form, () => {});
+    form.reset();
+    delete field("usuario").dataset.tocado;
+    rol.value = "monitor";
+    pais.value = "";
+    ciudad.value = "";
+    opciones();
+    verMaleta();
+    window.ui.openModal("user-modal");
+    field("nombre").focus();
+  });
+
+  modal.querySelector("[data-save]")!.addEventListener("click", async () => {
+    let existente = false;
+    const nombre = field("nombre").value.trim();
+    const ok = await intentar(form, async () => {
+      if (rol.value === "monitor" && (!pais.value || !ciudad.value)) throw new Error("Elige el país y la ciudad de su maleta.");
+      ({ existente } = await crearUsuario({
+        nombre,
+        usuario: field("usuario").value,
+        password: field("password").value,
+        rol: rol.value as "admin" | "monitor",
+        ciudad: texto(ciudad.value),
+        pais: texto(pais.value),
+      }));
+    });
+    if (!ok) return;
+    window.ui.closeModal("user-modal");
+    if (existente)
+      window.ui.alert({ tone: "info", title: `${nombre} ya tenía usuario`, message: "Ya usa el call center: entra al inventario con su misma contraseña de allá." });
+    else window.ui.toast(`${nombre} creado. Ya puede entrar.`, { tone: "success" });
+    render();
+    flashRow(body.querySelector(`tr[data-id="${perfiles().find((p) => p.nombre === nombre)?.id}"]`));
+  });
+
+  // ── Cambiar contraseña ──
+  const pModal = document.getElementById("pass-modal")!;
+  const pForm = pModal.querySelector<HTMLFormElement>("[data-form]")!;
+  let actual = "";
+  pModal.querySelector("[data-save]")!.addEventListener("click", async () => {
+    const pass = pForm.querySelector<HTMLInputElement>("[name=password]")!.value;
+    if (!(await intentar(pForm, () => cambiarUsuario({ id: actual, password: pass }), "Contraseña cambiada"))) return;
+    window.ui.closeModal("pass-modal");
+  });
+
+  body.addEventListener("menu-select", async (e) => {
+    const id = (e.target as HTMLElement).closest<HTMLElement>("tr[data-id]")!.dataset.id!;
+    const p = perfiles().find((x) => x.id === id)!;
+    const { value } = (e as CustomEvent<{ value: string }>).detail;
+    if (value === "maleta") return void (location.href = `/inventario?ubicacion=${maletaDe(id)!.id}`);
+    if (value === "clave") {
+      actual = id;
+      intentar(pForm, () => {});
+      pForm.reset();
+      pModal.querySelector("[data-modal-title]")!.textContent = `Contraseña de ${p.nombre}`;
+      window.ui.openModal("pass-modal");
+      return;
+    }
+    let hecho = false;
+    if (value === "monitor") hecho = await intentar(null, () => cambiarUsuario({ id, rol: "monitor" }), `${p.nombre} ahora es monitor`);
+    if (value === "admin") {
+      const ok = await window.ui.confirm({ tone: "warning", title: `¿Dar acceso de admin a ${p.nombre}?`, message: "Podrá ver costos y ganancias y manejar todo el inventario.", confirmText: "Hacer admin" });
+      if (ok) hecho = await intentar(null, () => cambiarUsuario({ id, rol: "admin" }), `${p.nombre} ahora es admin`);
+    }
+    if (value === "desactivar") {
+      const ok = await window.ui.confirm({
+        tone: "danger",
+        title: `¿Desactivar a ${p.nombre}?`,
+        message: "No podrá entrar al inventario. Lo que ya registró se conserva.",
+        confirmText: "Desactivar",
+      });
+      if (ok) hecho = await intentar(null, () => cambiarUsuario({ id, activo: false }), `${p.nombre} ya no puede entrar`);
+    }
+    if (value === "reactivar") hecho = await intentar(null, () => cambiarUsuario({ id, activo: true }), `${p.nombre} puede entrar de nuevo`);
+    if (!hecho) return;
+    render();
+    flashRow(body.querySelector(`tr[data-id="${id}"]`));
+  });
+</script>

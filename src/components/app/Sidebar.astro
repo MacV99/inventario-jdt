@@ -1,0 +1,497 @@
+---
+import ThemeSwitch from "./ThemeSwitch.astro";
+import Avatar from "../ui/Avatar.astro";
+import Menu from "../ui/Menu.astro";
+
+interface Props {
+  current: string;
+  /** Título de la página: se muestra en la barra de arriba en el celular */
+  title: string;
+  role: "admin" | "monitor";
+}
+
+const { current, title, role } = Astro.props;
+// Nombre y rol de quien entró: los pone el script (la página es la misma para todos)
+const me = { name: "" };
+
+const adminGroups = [
+  {
+    label: "Inventario",
+    items: [
+      { href: "/", icon: "bi-speedometer2", label: "Resumen" },
+      { href: "/inventario", icon: "bi-box-seam", label: "Inventario" },
+      { href: "/movimientos", icon: "bi-arrow-left-right", label: "Movimientos" },
+      { href: "/monitores", icon: "bi-briefcase", label: "Monitores" },
+      { href: "/reportes", icon: "bi-bar-chart-line", label: "Reportes" },
+    ],
+  },
+  {
+    label: "Configuración",
+    items: [
+      { href: "/productos", icon: "bi-tags", label: "Productos" },
+      { href: "/bodegas", icon: "bi-building", label: "Bodegas" },
+      { href: "/proveedores", icon: "bi-truck", label: "Proveedores" },
+      { href: "/metodos-pago", icon: "bi-credit-card", label: "Métodos de pago" },
+      { href: "/usuarios", icon: "bi-people", label: "Usuarios" },
+      { href: "/cargar", icon: "bi-upload", label: "Cargar datos" },
+    ],
+  },
+];
+const monitorGroups = [
+  {
+    label: "Mi trabajo",
+    items: [
+      { href: "/mi-maleta", icon: "bi-briefcase", label: "Mi maleta" },
+      { href: "/mis-ventas", icon: "bi-receipt", label: "Mis ventas" },
+    ],
+  },
+];
+const groups = role === "admin" ? adminGroups : monitorGroups;
+const home = groups[0]!.items[0]!;
+
+// Activo = el href más específico que coincide
+const clean = current.replace(/\/$/, "") || "/";
+const matches = (href: string) => (href === "/" ? clean === "/" : clean === href || clean.startsWith(`${href}/`));
+const activeHref = groups
+  .flatMap((g) => g.items.map((i) => i.href))
+  .filter(matches)
+  .sort((a, b) => b.length - a.length)[0];
+const isActive = (href: string) => href === activeHref;
+---
+
+<!-- Celular: barra de arriba con el botón del menú (el menú sale como cajón) -->
+<header class="mobile-bar">
+  <button type="button" class="btn btn-subtle btn-icon" data-nav-open aria-label="Abrir menú" aria-expanded="false">
+    <i class="bi bi-list" aria-hidden="true"></i>
+  </button>
+  <a href={home.href} class="mobile-brand" aria-label={home.label}><img src="/img/logo-96.png" alt="" /></a>
+  <span class="mobile-title">{title}</span>
+</header>
+<div class="nav-backdrop" data-nav-close></div>
+
+<aside id="main-nav">
+  <div class="brand-row">
+    <a href={home.href} class="brand flex-row" data-tip={home.label} data-tip-when="nav-collapsed">
+      <img src="/img/logo-96.png" alt="" />
+      <span class="nav-text">Inventario</span>
+    </a>
+    <button type="button" class="btn btn-subtle btn-icon btn-sm nav-toggle" data-nav-toggle aria-label="Retraer menú" data-tip="Retraer menú (Ctrl+B)">
+      <i class="bi bi-layout-sidebar" aria-hidden="true"></i>
+    </button>
+    <button type="button" class="btn btn-subtle btn-icon nav-close" data-nav-close aria-label="Cerrar menú">
+      <i class="bi bi-x-lg" aria-hidden="true"></i>
+    </button>
+  </div>
+
+  <nav aria-label="Principal">
+    {
+      groups.map((group) => (
+        <div class="group">
+          <p class="caps nav-text">{group.label}</p>
+          <ul>
+            {group.items.map((item) => (
+              <li>
+                <a
+                  href={item.href}
+                  class:list={["item", { active: isActive(item.href) }]}
+                  aria-current={isActive(item.href) ? "page" : undefined}
+                  data-tip={item.label}
+                  data-tip-when="nav-collapsed"
+                >
+                  <i class={`bi ${item.icon}`} />
+                  <span class="nav-text">{item.label}</span>
+                </a>
+              </li>
+            ))}
+          </ul>
+        </div>
+      ))
+    }
+  </nav>
+
+  <div class="foot">
+    <ThemeSwitch />
+    <div class="user flex-row" data-user-chip data-role={role}>
+      <span class="user-link flex-row" data-tip={me.name} data-tip-when="nav-collapsed">
+        <span class="avatar-status">
+          <Avatar name={me.name} />
+          <span class="dot success" />
+        </span>
+        <span class="user-text">
+          <span class="strong" data-me-name>{me.name}</span>
+          <span class="sub" data-me-rol></span>
+        </span>
+      </span>
+      <Menu
+        label="Cuenta"
+        icon="bi-three-dots-vertical"
+        items={[
+          role === "admin"
+            ? { value: "as-monitor", label: "Ver como monitor", icon: "bi-phone" }
+            : { value: "as-admin", label: "Ver como admin", icon: "bi-display" },
+          { value: "sep", separator: true },
+          { value: "logout", label: "Cerrar sesión", icon: "bi-box-arrow-right" },
+        ]}
+      />
+    </div>
+  </div>
+</aside>
+
+<style>
+  aside {
+    display: flex;
+    flex-direction: column;
+    overflow-x: hidden;
+    overflow-y: auto;
+    padding: var(--space-3);
+    background-color: var(--clr-surface);
+    border-right: 1px solid var(--clr-border);
+    view-transition-name: sidebar;
+  }
+
+  .mobile-bar {
+    position: sticky;
+    top: 0;
+    z-index: var(--z-nav);
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    height: var(--topbar-h);
+    padding: 0 var(--space-2);
+    padding-top: env(safe-area-inset-top);
+    box-sizing: content-box;
+    background-color: var(--clr-surface);
+    border-bottom: 1px solid var(--clr-border);
+  }
+
+  .mobile-brand {
+    display: flex;
+    flex-shrink: 0;
+  }
+
+  .mobile-brand img {
+    width: 24px;
+    height: 24px;
+  }
+
+  .mobile-title {
+    min-width: 0;
+    overflow: hidden;
+    font-weight: 700;
+    font-size: var(--text-sm);
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .nav-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: var(--z-nav);
+    background-color: var(--backdrop);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.2s var(--ease);
+  }
+
+  .nav-close {
+    flex-shrink: 0;
+    font-size: 0.95rem;
+  }
+
+  .brand-row {
+    position: relative;
+    display: flex;
+    align-items: center;
+    gap: var(--space-1);
+    height: var(--topbar-h);
+  }
+
+  .brand {
+    flex: 1;
+    justify-content: flex-start;
+    gap: var(--space-3);
+    min-width: 0;
+    padding: 0 var(--space-2);
+    font-weight: 800;
+    letter-spacing: var(--tracking-caps);
+    text-transform: uppercase;
+    font-size: var(--text-sm);
+    white-space: nowrap;
+  }
+
+  .brand img {
+    flex-shrink: 0;
+    width: 26px;
+    height: 26px;
+    transition: var(--transition);
+  }
+
+  .nav-toggle {
+    flex-shrink: 0;
+    font-size: 0.95rem;
+  }
+
+  nav {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-4);
+    margin-top: var(--space-2);
+  }
+
+  .group .caps {
+    padding: 0 var(--space-3);
+    margin-bottom: var(--space-1);
+  }
+
+  .foot {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2);
+    margin-top: auto;
+    padding-top: var(--space-4);
+  }
+
+  .user {
+    gap: var(--space-1);
+    padding-top: var(--space-2);
+    border-top: 1px solid var(--clr-border);
+  }
+
+  .user-link {
+    flex: 1;
+    justify-content: flex-start;
+    gap: var(--space-2);
+    min-width: 0;
+    padding: var(--space-1);
+    border-radius: var(--radius-sm);
+    transition: var(--transition);
+  }
+
+  .user-text {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    line-height: 1.25;
+  }
+
+  .user-text > * {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .group ul {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+
+  /* Sin cortes de línea mientras el menú se abre o se cierra */
+  .item,
+  .group .caps {
+    white-space: nowrap;
+    overflow: hidden;
+  }
+
+  .item {
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+    padding: 6px var(--space-3);
+    border-radius: var(--radius-sm);
+    font-size: var(--text-sm);
+    font-weight: 500;
+    color: var(--clr-text-2);
+    transition: var(--transition);
+  }
+
+  .item i {
+    font-size: 0.95rem;
+  }
+
+  .item.active {
+    background-color: var(--nav-active-bg);
+    color: var(--nav-active-fg);
+    font-weight: 600;
+  }
+
+  @media (hover: hover) {
+    .item:not(.active):hover {
+      background-color: var(--clr-surface-hover);
+      color: var(--clr-text);
+    }
+  }
+
+  /* Celular: el menú es un cajón que sale por la izquierda; la barra de arriba lo abre */
+  @media (max-width: 899.98px) {
+    aside {
+      position: fixed;
+      inset: 0 auto 0 0;
+      z-index: var(--z-nav);
+      width: var(--nav-drawer-w);
+      padding-top: calc(var(--space-3) + env(safe-area-inset-top));
+      padding-bottom: calc(var(--space-3) + env(safe-area-inset-bottom));
+      box-shadow: var(--shadow-lg);
+      translate: -100% 0;
+      visibility: hidden;
+      transition: translate 0.2s var(--ease), visibility 0.2s;
+    }
+
+    .nav-toggle {
+      display: none;
+    }
+
+    :global(:root[data-drawer="open"]) aside {
+      translate: 0 0;
+      visibility: visible;
+    }
+
+    :global(:root[data-drawer="open"]) .nav-backdrop {
+      opacity: 1;
+      pointer-events: auto;
+    }
+
+    /* Toques más cómodos con el dedo */
+    .item {
+      padding-block: 9px;
+    }
+  }
+
+  @media (min-width: 900px) {
+    .mobile-bar,
+    .nav-backdrop,
+    .nav-close {
+      display: none;
+    }
+
+    /* Retraído: solo íconos; el nombre sale en tooltip (data-tip-when="nav-collapsed") */
+    :global(:root[data-nav="collapsed"]) aside {
+      padding-inline: var(--space-2);
+    }
+
+    :global(:root[data-nav="collapsed"]) .nav-text,
+    :global(:root[data-nav="collapsed"]) .group .caps,
+    :global(:root[data-nav="collapsed"]) .user-text,
+    :global(:root[data-nav="collapsed"]) .user :global(ds-menu) {
+      display: none;
+    }
+
+    :global(:root[data-nav="collapsed"]) .brand,
+    :global(:root[data-nav="collapsed"]) .item,
+    :global(:root[data-nav="collapsed"]) .user-link {
+      justify-content: center;
+      padding-inline: 0;
+    }
+
+    /* El botón para expandir aparece sobre el logo al pasar el mouse (no ocupa otra fila) */
+    :global(:root[data-nav="collapsed"]) .nav-toggle {
+      position: absolute;
+      inset: 50% auto auto 50%;
+      translate: -50% -50%;
+      opacity: 0;
+    }
+
+    :global(:root[data-nav="collapsed"]) .brand-row:hover .nav-toggle,
+    :global(:root[data-nav="collapsed"]) .nav-toggle:focus-visible {
+      opacity: 1;
+    }
+
+    :global(:root[data-nav="collapsed"]) .brand-row:hover img,
+    :global(:root[data-nav="collapsed"]) .brand-row:has(.nav-toggle:focus-visible) img {
+      opacity: 0;
+    }
+
+    :global(:root[data-nav="collapsed"]) nav {
+      gap: var(--space-2);
+    }
+
+    :global(:root[data-nav="collapsed"]) .group + .group {
+      padding-top: var(--space-2);
+      border-top: 1px solid var(--clr-border);
+    }
+
+    /* Tema: solo el activo; un clic pasa al siguiente (ThemeSwitch) */
+    :global(:root[data-nav="collapsed"]) .foot :global(.theme-switch button[aria-pressed="false"]) {
+      display: none;
+    }
+
+    :global(:root[data-nav="collapsed"]) .user {
+      justify-content: center;
+    }
+  }
+
+  @media (min-width: 900px) {
+    aside {
+      position: sticky;
+      top: 0;
+      height: 100vh;
+    }
+  }
+</style>
+
+<script>
+  // Retraer / expandir el menú (se recuerda en este navegador). Atajo: Ctrl+B fuera de campos de texto
+  const navToggle = document.querySelector<HTMLButtonElement>("[data-nav-toggle]")!;
+  const root = document.documentElement;
+  const syncNav = () => {
+    const label = root.dataset.nav === "collapsed" ? "Expandir menú" : "Retraer menú";
+    navToggle.setAttribute("aria-label", label);
+    navToggle.dataset.tip = `${label} (Ctrl+B)`;
+  };
+  const toggleNav = () => {
+    if (root.dataset.nav === "collapsed") delete root.dataset.nav;
+    else root.dataset.nav = "collapsed";
+    try {
+      localStorage.setItem("jdt-nav", root.dataset.nav ?? "open");
+    } catch {}
+    syncNav();
+  };
+  navToggle.addEventListener("click", toggleNav);
+  document.addEventListener("keydown", (e) => {
+    const typing = (e.target as HTMLElement).closest?.("input, textarea, [contenteditable]");
+    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "b" && !typing) {
+      e.preventDefault();
+      toggleNav();
+    }
+  });
+  syncNav();
+
+  // Celular: abrir / cerrar el cajón del menú (fondo oscuro, X, Escape o al elegir una opción)
+  const navOpen = document.querySelector<HTMLButtonElement>("[data-nav-open]")!;
+  const setDrawer = (open: boolean) => {
+    if (open) root.dataset.drawer = "open";
+    else delete root.dataset.drawer;
+    navOpen.setAttribute("aria-expanded", String(open));
+  };
+  navOpen.addEventListener("click", () => setDrawer(true));
+  document.querySelectorAll("[data-nav-close]").forEach((el) => el.addEventListener("click", () => setDrawer(false)));
+  document.querySelectorAll("#main-nav nav a").forEach((a) => a.addEventListener("click", () => setDrawer(false)));
+  document.addEventListener("keydown", (e) => e.key === "Escape" && root.dataset.drawer && setDrawer(false));
+
+  // Cuenta: quién entró, «Ver como» (solo en la prueba local) y cerrar sesión
+  import { yo, ROL, DEMO, verComo, olvidar } from "../../lib/store";
+  import { salir } from "../../lib/api";
+  import { avatar } from "../../lib/view";
+
+  const chip = document.querySelector<HTMLElement>("[data-user-chip]")!;
+  const me = yo();
+  chip.querySelector("[data-me-name]")!.textContent = me.nombre;
+  chip.querySelector("[data-me-rol]")!.textContent = DEMO ? `${ROL[me.rol].label} · ejemplo` : ROL[me.rol].label;
+  chip.querySelector(".user-link")!.setAttribute("data-tip", me.nombre);
+  chip.querySelector(".avatar")?.replaceWith(document.createRange().createContextualFragment(avatar(me.nombre)));
+  if (!DEMO) chip.querySelectorAll('[data-value="as-monitor"], [data-value="as-admin"], .option-sep').forEach((el) => el.remove());
+
+  chip.addEventListener("menu-select", async (e) => {
+    const { value } = (e as CustomEvent<{ value: string }>).detail;
+    if (value === "as-monitor" || value === "as-admin") {
+      verComo(value === "as-monitor" ? "monitor" : "admin");
+      location.href = value === "as-monitor" ? "/mi-maleta" : "/";
+    }
+    if (value === "logout") {
+      await salir();
+      olvidar();
+      window.ui.flash("Sesión cerrada", "info");
+      location.href = "/login";
+    }
+  });
+</script>

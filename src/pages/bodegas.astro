@@ -1,0 +1,166 @@
+---
+// Bodegas (admin): una por ciudad y país. Las maletas de los monitores se crean solas al aprobar un monitor.
+import AppLayout from "../layouts/AppLayout.astro";
+import PageHeader from "../components/ui/PageHeader.astro";
+import Select from "../components/ui/Select.astro";
+import Modal from "../components/ui/Modal.astro";
+import FormError from "../components/ui/FormError.astro";
+---
+
+<AppLayout title="Bodegas">
+  <PageHeader title="Bodegas" subtitle=" ">
+    <button slot="actions" type="button" class="btn btn-primary" data-new><i class="bi bi-plus-lg" aria-hidden="true"></i>Nueva bodega</button>
+  </PageHeader>
+
+  <section class="card card-list" data-table>
+    <div class="toolbar">
+      <label class="input-icon grow">
+        <i class="bi bi-search" aria-hidden="true"></i>
+        <input class="input" type="search" placeholder="Buscar bodega o ciudad…" aria-label="Buscar" data-filter-q />
+      </label>
+      <Select value="" searchable filter="pais" label="País" options={[{ value: "", label: "Todos los países" }]} id="f-pais" />
+    </div>
+    <div class="table-wrap">
+      <table class="table table-cards">
+        <thead>
+          <tr>
+            <th data-sort="text" data-card-title>Bodega</th>
+            <th data-sort="text">Ciudad</th>
+            <th class="num" data-sort="num">Productos</th>
+            <th class="num" data-sort="num">Unidades</th>
+            <th class="num" data-sort="num">Valor</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody data-body></tbody>
+      </table>
+    </div>
+    <div class="empty" data-empty hidden>
+      <i class="bi bi-building" aria-hidden="true"></i>
+      <p class="muted">Ninguna bodega coincide.</p>
+    </div>
+  </section>
+
+  <Modal id="bod-modal" title="Nueva bodega">
+    <form class="form-grid" data-form novalidate>
+      <div class="span-2"><FormError /></div>
+      <div class="field">
+        <span class="label">País</span>
+        <Select name="pais" searchable creatable createLabel="Crear país" placeholder="Elegir país" options={[]} />
+      </div>
+      <div class="field">
+        <span class="label">Ciudad</span>
+        <Select name="ciudad" searchable creatable createLabel="Crear ciudad" placeholder="Elegir ciudad" options={[]} />
+      </div>
+      <div class="field span-2">
+        <label for="bd-nombre">Nombre</label>
+        <input id="bd-nombre" name="nombre" class="input" placeholder="Ej. Bodega Cali" />
+        <span class="hint">Se llena solo al elegir la ciudad.</span>
+      </div>
+    </form>
+    <button slot="footer" type="button" class="btn btn-ghost" data-modal-close>Cancelar</button>
+    <button slot="footer" type="button" class="btn btn-primary" data-save>Guardar</button>
+  </Modal>
+</AppLayout>
+
+<script>
+  import "../lib/ui";
+  import { initTableFilter } from "../lib/ui/table-filter";
+  import { bodegas, bodega, stockFilas, guardarBodega, setActivo } from "../lib/store";
+  import { money, num, esc, searchText, menu, intentar, dsSelect, uniqueOptions, flashRow, sinNuevo as texto } from "../lib/view";
+
+  const scope = document.querySelector<HTMLElement>("[data-table]")!;
+  const body = scope.querySelector<HTMLElement>("[data-body]")!;
+  const table = initTableFilter(scope);
+
+  function render() {
+    const filas = stockFilas();
+    const bs = bodegas().filter((b) => b.tipo === "bodega");
+    body.innerHTML = bs
+      .map((b) => {
+        const s = filas.filter((f) => f.bodega_id === b.id);
+        const unidades = s.reduce((a, f) => a + f.cantidad, 0);
+        const valor = s.reduce((a, f) => a + f.valor, 0);
+        const acciones = [
+          { value: "ver", label: "Ver inventario", icon: "bi-box-seam" },
+          { value: "editar", label: "Editar", icon: "bi-pencil" },
+          { separator: true },
+          b.activa ? { value: "desactivar", label: "Desactivar", icon: "bi-slash-circle", danger: true } : { value: "activar", label: "Activar", icon: "bi-check2-circle" },
+        ];
+        return `<tr data-row data-id="${b.id}" data-pais="${esc(b.pais)}" data-text="${esc(searchText(b.nombre, b.ciudad, b.pais))}">
+          <td><span class="strong">${esc(b.nombre)}</span>${b.activa ? "" : ' <span class="badge">Inactiva</span>'}</td>
+          <td>${esc(b.ciudad)}<p class="sub">${esc(b.pais)}</p></td>
+          <td class="num tnum">${s.length}</td>
+          <td class="num tnum" data-sort-value="${unidades}">${num(unidades)}</td>
+          <td class="num tnum strong" data-sort-value="${valor}">${money(valor)}</td>
+          <td class="cell-actions">${menu(acciones)}</td>
+        </tr>`;
+      })
+      .join("");
+    document.querySelector("[data-page-subtitle]")!.textContent = `${bs.filter((b) => b.activa).length} bodegas · las maletas están en Monitores`;
+    dsSelect(scope, "#f-pais").setOptions([{ value: "", label: "Todos los países" }, ...uniqueOptions(bs.map((b) => b.pais))]);
+    table.rescan();
+  }
+  render();
+
+  // ── Crear / editar ──
+  const modal = document.getElementById("bod-modal")!;
+  const form = modal.querySelector<HTMLFormElement>("[data-form]")!;
+  const pais = dsSelect(form, "ds-select[name=pais]");
+  const ciudad = dsSelect(form, "ds-select[name=ciudad]");
+  const nombre = form.querySelector<HTMLInputElement>("[name=nombre]")!;
+  let editando = "";
+  let nombreAuto = true;
+
+  // Catálogos: países y ciudades que ya existen (ciudades del país elegido primero)
+  function opciones() {
+    const bs = bodegas();
+    pais.setOptions(uniqueOptions(bs.map((b) => b.pais)));
+    const p = texto(pais.value);
+    ciudad.setOptions(uniqueOptions(bs.filter((b) => !p || b.pais === p).map((b) => b.ciudad)));
+  }
+  pais.addEventListener("change", opciones);
+  ciudad.addEventListener("change", () => {
+    if (nombreAuto && ciudad.value) nombre.value = `Bodega ${texto(ciudad.value)}`;
+  });
+  nombre.addEventListener("input", () => (nombreAuto = !nombre.value));
+
+  function open(id = "") {
+    editando = id;
+    const b = id ? bodega(id) : undefined;
+    intentar(form, () => {});
+    modal.querySelector("[data-modal-title]")!.textContent = b ? `Editar ${b.nombre}` : "Nueva bodega";
+    pais.value = b?.pais ?? "";
+    opciones();
+    ciudad.value = b?.ciudad ?? "";
+    nombre.value = b?.nombre ?? "";
+    nombreAuto = !b;
+    window.ui.openModal("bod-modal");
+  }
+  document.querySelector("[data-new]")!.addEventListener("click", () => open());
+  modal.querySelector("[data-save]")!.addEventListener("click", async () => {
+    let id = "";
+    const ok = await intentar(
+      form,
+      async () => (id = await guardarBodega({ id: editando || undefined, nombre: nombre.value.trim(), ciudad: texto(ciudad.value), pais: texto(pais.value) })),
+      editando ? "Bodega actualizada" : "Bodega creada",
+    );
+    if (!ok) return;
+    window.ui.closeModal("bod-modal");
+    render();
+    flashRow(body.querySelector(`tr[data-id="${id}"]`));
+  });
+
+  body.addEventListener("menu-select", async (e) => {
+    const id = (e.target as HTMLElement).closest<HTMLElement>("tr[data-id]")!.dataset.id!;
+    const { value } = (e as CustomEvent<{ value: string }>).detail;
+    if (value === "ver") location.href = `/inventario?ubicacion=${id}`;
+    if (value === "editar") open(id);
+    if (value === "activar") await intentar(null, () => setActivo("bodega", id, true), "Bodega activada");
+    if (value === "desactivar") {
+      const ok = await window.ui.confirm({ tone: "warning", title: `¿Desactivar ${bodega(id)!.nombre}?`, message: "Deja de salir para elegir en los movimientos. Se puede activar de nuevo.", confirmText: "Desactivar" });
+      if (ok) await intentar(null, () => setActivo("bodega", id, false), "Bodega desactivada");
+    }
+    render();
+  });
+</script>
