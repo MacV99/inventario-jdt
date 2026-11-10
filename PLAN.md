@@ -93,17 +93,18 @@ Ejemplo: hay 10 libros a $20.000. Llegan 10 más a $30.000. Nuevo costo: 20 libr
 1. **Datos**: en el mismo proyecto Supabase del call center, en un espacio aparte que no toca nada del call center. Antes de conectar: copia de seguridad.
 2. **Publicación**: Vercel (cuenta de JDT) + GitHub del usuario.
 3. **Monedas**: pesos y dólares, las dos importan.
-4. **Precio de venta**: igual en todos los países por ahora (se puede cambiar después).
+4. **Precio de venta**: cada país tiene sus precios y su moneda (respuesta de German, 2026-11-09). Pantalla «Países y monedas»: cada país con su moneda y cuántos pesos vale (tasa, la pone el admin). Las ventas van en la moneda del país de donde salen; los totales se suman en pesos.
 5. **Ventas**: las registra el monitor.
+8. **Dinero de los monitores**: sí se lleva la cuenta (cuánto vendió, cuánto entregó y cuánto debe), en la moneda de su país.
 6. **Usuarios sin correo**, igual que el call center: se entra con usuario y contraseña (`usuario@jdt.local`). El usuario (MacV) es el superadmin y crea a los demás. German y Leidy entran con usuario, no con correo.
 7. **Para que Claude pruebe**: selector «Ver como» solo en local, igual que el call center (ver cada rol sin contraseña).
 
 ## 9. Pendiente para preguntarle a German y Leidy
 
-1. ¿Llevamos cuenta del dinero que entrega cada monitor después de vender?
-2. Monedas: ¿en qué moneda se compra y en cuál se vende? ¿Se usa una tasa fija o la del día?
-3. Precio igual en todos los países: ¿en dólares, o en pesos y se convierte?
-4. Lista inicial: bodegas (ciudad-país), productos con costo y precio, monitores. Un Excel sirve.
+1. ~~¿Llevamos cuenta del dinero que entrega cada monitor?~~ Sí (hecho).
+2. ¿En qué moneda se compra? ¿La tasa es fija o la del día? (Por ahora: el admin pone la tasa de cada país y la cambia cuando quiera.)
+3. ~~¿Precio igual en todos los países?~~ No: cada país con sus precios y su moneda (hecho).
+4. Lista inicial: países con su moneda, bodegas (ciudad-país), productos con costo y precio por país, monitores. Un Excel sirve.
 
 ## 10. Pedidos de Leidy (2026-11-09) — hechos
 
