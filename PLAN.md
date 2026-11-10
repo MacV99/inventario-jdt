@@ -1,6 +1,6 @@
 # INVENTARIO JDT — Plan
 
-Estado (2026-11-09): **publicado** en https://inventario-jdt.vercel.app con la base real (esquema `inventario` en el proyecto Supabase del call center). Falta cargar datos y crear usuarios.
+Estado (2026-11-09): **publicado** en https://jdt-inventario.vercel.app con la base real (esquema `inventario` en el proyecto Supabase del call center). Falta cargar datos y crear usuarios.
 
 ---
 
