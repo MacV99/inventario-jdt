@@ -205,7 +205,7 @@ const tipos = Object.entries(TIPO_MOV).map(([value, t]) => ({ value, label: t.la
   import "../lib/ui";
   import { initTableFilter } from "../lib/ui/table-filter";
   import {
-    movimientos, bodegas, bodega, productos, cantidadEn, registrarMovimiento, anularMovimiento, totalMov, totalLocal, unidadesMov, TIPO_MOV, REGLAS, MONEDA, type TipoMov, type Movimiento, rutaMov, metodosPago, metodoPago, esVentaOficina, monedaDe, precioEn, producto,
+    movimientos, bodegas, bodega, productos, cantidadEn, registrarMovimiento, anularMovimiento, totalMov, totalLocal, unidadesMov, TIPO_MOV, REGLAS, MONEDA, type TipoMov, type Movimiento, rutaMov, metodosDe, metodoPago, esVentaOficina, monedaDe, precioEn, producto,
   } from "../lib/store";
   import { money, num, day, dayYear, esc, searchText, menu, dsSelect, intentar, parseNum, urlParam, today, flashRow, opcionesLugar, type DsSelectEl } from "../lib/view";
 
@@ -306,6 +306,8 @@ const tipos = Object.entries(TIPO_MOV).map(([value, t]) => ({ value, label: t.la
     };
     keep(origen, lugares(r.origen));
     keep(destino, lugares(r.destino));
+    // Cómo pagó: los métodos del país de donde sale la venta
+    keep(metodo, metodosDe(lugarVenta()?.pais).map((m) => ({ value: String(m.id), label: m.nombre })));
     valorLabel.textContent = t() === "venta" ? (cur() === MONEDA ? "Precio unit." : `Precio (${cur()})`) : "";
     form.querySelector<HTMLElement>("[data-total-wrap]")!.hidden = !conValor();
     form.querySelector<HTMLElement>("[data-sub-label]")!.style.visibility = conValor() ? "" : "hidden";
@@ -346,7 +348,6 @@ const tipos = Object.entries(TIPO_MOV).map(([value, t]) => ({ value, label: t.la
     rows().forEach((r) => r.remove());
     tipo.value = preset.tipo && preset.tipo in TIPO_MOV ? preset.tipo : "compra";
     fecha.value = today();
-    metodo.setOptions(metodosPago().filter((m) => m.activo).map((m) => ({ value: String(m.id), label: m.nombre })));
     metodo.value = "";
     sync();
     if (preset.origen) origen.value = preset.origen;

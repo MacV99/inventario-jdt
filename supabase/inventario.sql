@@ -101,7 +101,10 @@ create table if not exists inventario.metodos_pago (
   activo boolean not null default true,
   orden  smallint not null default 0
 );
-create unique index if not exists metodos_pago_nombre on inventario.metodos_pago (lower(nombre));
+-- Cada país tiene sus métodos (2026-11-11). Sin país = sirve en todos (p. ej. Efectivo).
+alter table inventario.metodos_pago add column if not exists pais text references inventario.paises(nombre) on update cascade on delete cascade;
+drop index if exists inventario.metodos_pago_nombre;
+create unique index if not exists metodos_pago_nombre_pais on inventario.metodos_pago (lower(nombre), coalesce(pais, ''));
 insert into inventario.metodos_pago (nombre, orden)
 select x.nombre, x.orden
 from (values ('Efectivo', 1), ('Nequi', 2), ('Daviplata', 3), ('Transferencia', 4), ('Tarjeta débito', 5), ('Tarjeta crédito', 6)) x(nombre, orden)
@@ -289,7 +292,7 @@ begin
   end if;
 
   if v_tipo = 'venta' then
-    if v_metodo is null or not exists (select 1 from inventario.metodos_pago where id = v_metodo and activo) then
+    if v_metodo is null or not exists (select 1 from inventario.metodos_pago where id = v_metodo and activo and (pais is null or pais = v_o.pais)) then
       raise exception 'Elige cómo pagó el cliente.';
     end if;
   else
@@ -374,7 +377,7 @@ begin
       select jsonb_agg(jsonb_build_object('id', v.id, 'nombre', v.nombre, 'contacto', v.contacto) order by v.nombre)
       from inventario.proveedores v), '[]') else '[]' end,
     'metodos_pago', coalesce((
-      select jsonb_agg(jsonb_build_object('id', m.id, 'nombre', m.nombre, 'activo', m.activo) order by m.orden, m.nombre)
+      select jsonb_agg(jsonb_build_object('id', m.id, 'nombre', m.nombre, 'pais', m.pais, 'activo', m.activo) order by m.orden, m.nombre)
       from inventario.metodos_pago m where v_admin or m.activo), '[]'),
     'movimientos', coalesce((
       select jsonb_agg(jsonb_build_object('id', m.id, 'tipo', m.tipo, 'fecha', m.fecha, 'origen_id', m.origen_id,
@@ -587,14 +590,21 @@ begin
     elsif p_tabla = 'metodos_pago' then
       if v_id is null then
         if nullif(trim(v_x->>'nombre'), '') is null then raise exception 'Escribe el nombre del método de pago.'; end if;
-        if exists (select 1 from inventario.metodos_pago where lower(nombre) = lower(trim(v_x->>'nombre'))) then raise exception 'Ya existe ese método de pago.'; end if;
-        insert into inventario.metodos_pago (nombre, orden)
-        values (trim(v_x->>'nombre'), (select coalesce(max(orden), 0) + 1 from inventario.metodos_pago))
+        if exists (select 1 from inventario.metodos_pago where lower(nombre) = lower(trim(v_x->>'nombre'))
+                     and coalesce(pais, '') = coalesce(nullif(trim(v_x->>'pais'), ''), '')) then raise exception 'Ya existe ese método de pago.'; end if;
+        insert into inventario.metodos_pago (nombre, pais, orden)
+        values (trim(v_x->>'nombre'), nullif(trim(v_x->>'pais'), ''), (select coalesce(max(orden), 0) + 1 from inventario.metodos_pago))
         returning id::text into v_id;
       else
-        if exists (select 1 from inventario.metodos_pago where lower(nombre) = lower(trim(v_x->>'nombre')) and id::text <> v_id) then raise exception 'Ya existe ese método de pago.'; end if;
+        if exists (select 1 from inventario.metodos_pago m, inventario.metodos_pago y
+                    where y.id::text = v_id and m.id <> y.id
+                      and lower(m.nombre) = lower(coalesce(nullif(trim(v_x->>'nombre'), ''), y.nombre))
+                      and coalesce(m.pais, '') = coalesce(case when v_x ? 'pais' then nullif(trim(v_x->>'pais'), '') else y.pais end, '')) then
+          raise exception 'Ya existe ese método de pago.';
+        end if;
         update inventario.metodos_pago set
           nombre = coalesce(nullif(trim(v_x->>'nombre'), ''), nombre),
+          pais   = case when v_x ? 'pais' then nullif(trim(v_x->>'pais'), '') else pais end,
           activo = coalesce((v_x->>'activo')::boolean, activo)
         where id = v_id::smallint;
       end if;

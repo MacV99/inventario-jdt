@@ -99,7 +99,7 @@ import FormError from "../components/ui/FormError.astro";
   import "../lib/ui";
   import { initTableFilter } from "../lib/ui/table-filter";
   import { setKpi } from "../lib/ui/kpi";
-  import { cuadre, stockFilas, bodega, producto, ventas, pagos, totalLocal, registrarPago, metodosPago, monedaDe, precioEn } from "../lib/store";
+  import { cuadre, stockFilas, bodega, producto, ventas, pagos, totalLocal, registrarPago, metodosDe, monedaDe, precioEn } from "../lib/store";
   import { money, num, day, esc, searchText, menu, avatar, intentar, parseNum, flashRow, dsSelect } from "../lib/view";
 
   const scope = document.querySelector<HTMLElement>("[data-table]")!;
@@ -176,11 +176,11 @@ import FormError from "../components/ui/FormError.astro";
   const dinero = document.getElementById("dinero-modal")!;
   const form = dinero.querySelector<HTMLFormElement>("[data-form]")!;
   const metodo = dsSelect(form, "ds-select[name=metodo]");
-  metodo.setOptions(metodosPago().filter((m) => m.activo).map((m) => ({ value: String(m.id), label: m.nombre })));
   let actual = "";
   function abrirDinero(id: string) {
     actual = id;
     form.reset();
+    metodo.setOptions(metodosDe(bodega(id)?.pais).map((m) => ({ value: String(m.id), label: m.nombre })));
     metodo.value = "";
     intentar(form, () => {});
     const c = cuadre().find((x) => x.bodega.id === id)!;

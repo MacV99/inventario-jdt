@@ -194,5 +194,23 @@ select public.inv_guardar('metodos_pago', '{"nombre":"Tarjeta Visa"}');
 select t_espera_error($q$select public.inv_guardar('metodos_pago', '{"nombre":"tarjeta visa"}')$q$, 'Ya existe');
 reset role;
 select t_ok((select count(*) = 7 from inventario.metodos_pago), 'método de pago agregado');
+-- 16b. Métodos de pago por país (2026-11-11): el mismo nombre puede estar en dos países; la venta solo acepta los de su país
+select public.inv_guardar('metodos_pago', '{"nombre":"Yape","pais":"Colombia"}');
+select t_espera_error($q$select public.inv_guardar('metodos_pago', '{"nombre":"yape","pais":"Colombia"}')$q$, 'Ya existe');
+select public.inv_guardar('metodos_pago', '{"nombre":"Yape"}');
+select t_ok((select count(*) = 2 from inventario.metodos_pago where nombre = 'Yape'), 'mismo nombre en dos países');
+select t_ok((select bool_and(m ? 'pais') from jsonb_array_elements(public.inv_datos()->'metodos_pago') m), 'los métodos traen su país');
+select public.inv_guardar('metodos_pago', '{"nombre":"Plin","pais":"Peru"}');
+select t_espera_error(format($q$select public.inv_registrar('{"tipo":"venta","origen_id":"%s","metodo_pago_id":%s,"items":[{"producto_id":"%s","cantidad":1,"valor_unitario":60000}]}')$q$,
+  (select id from inventario.bodegas where nombre='Bodega Bogotá'), (select id from inventario.metodos_pago where nombre='Plin'), (select id from inventario.productos where codigo='LIB-001')), 'cómo pagó');
+select t_ok(true, 'en Colombia no se puede vender con un método de Perú');
+
+-- 16c. Compra sin costo (2026-11-11): entra la mercancía y el costo promedio no cambia
+create temp table t_costo as select costo_promedio from inventario.producto_costos c join inventario.productos p on p.id = c.producto_id where p.codigo='LIB-001';
+select public.inv_registrar(jsonb_build_object('tipo','compra','destino_id',(select id from inventario.bodegas where nombre='Bodega Bogotá'),
+  'proveedor_nuevo','Sin proveedor','items',jsonb_build_array(jsonb_build_object('producto_id',(select id from inventario.productos where codigo='LIB-001'),'cantidad',4,'valor_unitario',0))));
+select t_ok((select c.costo_promedio = (select costo_promedio from t_costo) from inventario.producto_costos c join inventario.productos p on p.id = c.producto_id where p.codigo='LIB-001'), 'compra sin costo no cambia el costo promedio');
+select public.inv_anular((select max(id) from inventario.movimientos where tipo = 'compra'));
+select t_ok((select c.costo_promedio = (select costo_promedio from t_costo) from inventario.producto_costos c join inventario.productos p on p.id = c.producto_id where p.codigo='LIB-001'), 'anular la compra sin costo tampoco lo cambia');
 
 \echo TODAS LAS PRUEBAS PASARON

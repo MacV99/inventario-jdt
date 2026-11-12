@@ -21,7 +21,8 @@ export interface Producto { id: string; codigo: string; nombre: string; unidad: 
 /** Cada país vende en su moneda. tasa = cuántos pesos vale 1 unidad (para sumar todo en pesos). */
 export interface Pais { nombre: string; moneda: string; tasa: number }
 export interface Proveedor { id: string; nombre: string; contacto: string }
-export interface MetodoPago { id: number; nombre: string; activo: boolean }
+/** pais: de qué país es (vacío = sirve en todos, p. ej. Efectivo). */
+export interface MetodoPago { id: number; nombre: string; pais?: string | null; activo: boolean }
 export interface Item { producto_id: string; cantidad: number; valor_unitario: number; costo_unitario: number }
 export interface Movimiento {
   id: number;
@@ -112,7 +113,7 @@ export const ROL: Record<Rol, { label: string }> = {
 const KEY_DEMO = "jdt-inventario-demo";
 const KEY_CACHE = "jdt-inv-datos";
 const KEY_VER = "jdt-inv-ver-como";
-const VERSION = 4;
+const VERSION = 5;
 const hoy = () => new Date().toLocaleDateString("en-CA"); // AAAA-MM-DD en la hora local
 
 /** Prueba local sin sesión: datos de ejemplo (también en una copia armada con PUBLIC_DEMO=1). En la página publicada nunca. */
@@ -253,7 +254,10 @@ export const bodegas = () => (paisActual() ? load().bodegas.filter((b) => b.pais
 /** Todas, sin importar el país elegido. */
 export const todasBodegas = () => load().bodegas;
 export const productos = () => load().productos;
-export const metodosPago = () => load().metodos_pago;
+/** Métodos de pago del país elegido en el menú (y los que sirven en todos). */
+export const metodosPago = () => load().metodos_pago.filter((m) => !paisActual() || !m.pais || m.pais === paisActual());
+/** Los activos que sirven en un país (para vender o recibir dinero ahí). */
+export const metodosDe = (pais?: string | null) => load().metodos_pago.filter((m) => m.activo && (!m.pais || m.pais === pais));
 export const paises = () => load().paises;
 export const pais = (nombre?: string | null) => load().paises.find((p) => p.nombre === nombre);
 /** Moneda y tasa de un lugar (las de su país). Sin país conocido: pesos. */
@@ -500,7 +504,7 @@ function registrarLocal(input: NuevoMovimiento, state: State): Movimiento {
     }
   }
   if (input.tipo === "compra" && !proveedorId) throw new Error("Elige el proveedor.");
-  if (input.tipo === "venta" && !state.metodos_pago.some((m) => m.id === input.metodo_pago_id && m.activo)) throw new Error("Elige cómo pagó el cliente.");
+  if (input.tipo === "venta" && !state.metodos_pago.some((m) => m.id === input.metodo_pago_id && m.activo && (!m.pais || m.pais === o?.pais))) throw new Error("Elige cómo pagó el cliente.");
   // La venta va en la moneda del país de donde sale; la compra en la que se pagó; lo demás no lleva plata
   const enPais = state.paises.find((x) => x.nombre === o?.pais);
   const moneda = input.tipo === "venta" ? enPais?.moneda ?? MONEDA : input.tipo === "compra" ? input.moneda || MONEDA : MONEDA;
@@ -676,17 +680,19 @@ export async function guardarPais(x: { antes?: string; nombre: string; moneda: s
 }
 
 /** Métodos de pago: crear, renombrar o activar/desactivar. */
-export async function guardarMetodoPago(m: { id?: number; nombre?: string; activo?: boolean }) {
+/** pais: "" = todos los países; sin la clave = no cambia. */
+export async function guardarMetodoPago(m: { id?: number; nombre?: string; pais?: string; activo?: boolean }) {
   if (!DEMO) return Number((await guardarBase("metodos_pago", m))[0]);
   const s = load();
   const nombre = m.nombre?.trim();
+  let old = s.metodos_pago.find((x) => x.id === m.id);
+  const pais = m.pais !== undefined ? m.pais || null : old?.pais ?? null;
   if (nombre !== undefined) {
     if (!nombre) throw new Error("Escribe el nombre del método de pago.");
-    if (s.metodos_pago.some((x) => llave(x.nombre) === llave(nombre) && x.id !== m.id)) throw new Error("Ya existe ese método de pago.");
+    if (s.metodos_pago.some((x) => llave(x.nombre) === llave(nombre) && (x.pais ?? null) === pais && x.id !== m.id)) throw new Error("Ya existe ese método de pago.");
   }
-  let old = s.metodos_pago.find((x) => x.id === m.id);
-  if (old) Object.assign(old, { nombre: nombre ?? old.nombre, activo: m.activo ?? old.activo });
-  else s.metodos_pago.push((old = { id: Math.max(0, ...s.metodos_pago.map((x) => x.id)) + 1, nombre: nombre!, activo: true }));
+  if (old) Object.assign(old, { nombre: nombre ?? old.nombre, pais, activo: m.activo ?? old.activo });
+  else s.metodos_pago.push((old = { id: Math.max(0, ...s.metodos_pago.map((x) => x.id)) + 1, nombre: nombre!, pais, activo: true }));
   saveDemo();
   return old.id;
 }
@@ -933,13 +939,14 @@ function seed(): State {
       activo: true,
     })),
     proveedores: [{ id: "v1", nombre: "Sin proveedor", contacto: "" }],
+    // Ejemplo: Efectivo y Transferencia sirven en todos; los demás son de un país
     metodos_pago: [
-      { id: 1, nombre: "Efectivo", activo: true },
-      { id: 2, nombre: "Nequi", activo: true },
-      { id: 3, nombre: "Daviplata", activo: true },
-      { id: 4, nombre: "Transferencia", activo: true },
-      { id: 5, nombre: "Tarjeta débito", activo: true },
-      { id: 6, nombre: "Tarjeta crédito", activo: true },
+      { id: 1, nombre: "Efectivo", pais: null, activo: true },
+      { id: 2, nombre: "Nequi", pais: "Colombia", activo: true },
+      { id: 3, nombre: "Daviplata", pais: "Colombia", activo: true },
+      { id: 4, nombre: "Transferencia", pais: null, activo: true },
+      { id: 5, nombre: "Yape", pais: "Perú", activo: true },
+      { id: 6, nombre: "Plin", pais: "Perú", activo: true },
     ],
     movimientos: [],
     pagos: [],

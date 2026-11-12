@@ -1,10 +1,12 @@
 ---
 // Métodos de pago (admin, pedido de Leidy 2026-11-09): cómo paga el cliente (efectivo, Nequi, tarjeta…).
 // Se pueden agregar, renombrar y desactivar (los desactivados dejan de salir al vender; las ventas viejas los conservan).
+// Cada uno es de un país (al vender solo salen los del país de donde sale la venta); sin país = sirve en todos.
 import AppLayout from "../layouts/AppLayout.astro";
 import PageHeader from "../components/ui/PageHeader.astro";
 import Modal from "../components/ui/Modal.astro";
 import FormError from "../components/ui/FormError.astro";
+import Select from "../components/ui/Select.astro";
 ---
 
 <AppLayout title="Métodos de pago">
@@ -18,6 +20,7 @@ import FormError from "../components/ui/FormError.astro";
         <thead>
           <tr>
             <th data-sort="text" data-card-title>Método</th>
+            <th data-sort="text">País</th>
             <th class="num" data-sort="num">Ventas</th>
             <th class="num" data-sort="num">Vendido</th>
             <th data-sort="text">Estado</th>
@@ -40,6 +43,11 @@ import FormError from "../components/ui/FormError.astro";
         <label for="mp-nombre">Nombre</label>
         <input id="mp-nombre" name="nombre" class="input" placeholder="Ej. Tarjeta Visa · Datáfono Bancolombia" />
       </div>
+      <div class="field span-2">
+        <span class="label">País</span>
+        <Select name="pais" searchable label="País" options={[]} />
+        <span class="hint">«Todos los países» si sirve en cualquiera (p. ej. Efectivo).</span>
+      </div>
     </form>
     <button slot="footer" type="button" class="btn btn-ghost" data-modal-close>Cancelar</button>
     <button slot="footer" type="button" class="btn btn-primary" data-save>Guardar</button>
@@ -49,8 +57,8 @@ import FormError from "../components/ui/FormError.astro";
 <script>
   import "../lib/ui";
   import { initTableFilter } from "../lib/ui/table-filter";
-  import { metodosPago, metodoPago, ventas, totalMov, guardarMetodoPago } from "../lib/store";
-  import { money, esc, menu, intentar, flashRow } from "../lib/view";
+  import { metodosPago, metodoPago, ventas, totalMov, guardarMetodoPago, paises, paisActual } from "../lib/store";
+  import { money, esc, menu, intentar, flashRow, dsSelect } from "../lib/view";
 
   const scope = document.querySelector<HTMLElement>("[data-table]")!;
   const body = scope.querySelector<HTMLElement>("[data-body]")!;
@@ -65,11 +73,12 @@ import FormError from "../components/ui/FormError.astro";
         const total = mias.reduce((a, v) => a + totalMov(v), 0);
         return `<tr data-row data-id="${m.id}">
           <td class="strong">${esc(m.nombre)}</td>
+          <td>${m.pais ? esc(m.pais) : '<span class="muted">Todos</span>'}</td>
           <td class="num tnum">${mias.length}</td>
           <td class="num tnum" data-sort-value="${total}">${money(total)}</td>
           <td>${m.activo ? '<span class="dot success"></span> Activo' : '<span class="badge">Desactivado</span>'}</td>
           <td class="cell-actions">${menu([
-            { value: "editar", label: "Renombrar", icon: "bi-pencil" },
+            { value: "editar", label: "Editar", icon: "bi-pencil" },
             m.activo ? { value: "desactivar", label: "Desactivar", icon: "bi-slash-circle" } : { value: "activar", label: "Activar", icon: "bi-check2" },
           ])}</td>
         </tr>`;
@@ -83,20 +92,23 @@ import FormError from "../components/ui/FormError.astro";
   const modal = document.getElementById("metodo-modal")!;
   const form = modal.querySelector<HTMLFormElement>("[data-form]")!;
   const nombre = form.querySelector<HTMLInputElement>("[name=nombre]")!;
+  const pais = dsSelect(form, "ds-select[name=pais]");
+  pais.setOptions([{ value: "", label: "Todos los países" }, ...paises().map((p) => ({ value: p.nombre, label: p.nombre }))]);
   let editando = 0;
   function open(id = 0) {
     editando = id;
     intentar(form, () => {});
     const m = id ? metodoPago(id) : undefined;
-    modal.querySelector("[data-modal-title]")!.textContent = m ? `Renombrar ${m.nombre}` : "Nuevo método de pago";
+    modal.querySelector("[data-modal-title]")!.textContent = m ? `Editar ${m.nombre}` : "Nuevo método de pago";
     nombre.value = m?.nombre ?? "";
+    pais.value = m ? m.pais ?? "" : paisActual();
     window.ui.openModal("metodo-modal");
     nombre.focus();
   }
   document.querySelector("[data-new]")!.addEventListener("click", () => open());
   modal.querySelector("[data-save]")!.addEventListener("click", async () => {
     let id = 0;
-    const ok = await intentar(form, async () => (id = await guardarMetodoPago({ id: editando || undefined, nombre: nombre.value })), editando ? "Método actualizado" : "Método creado");
+    const ok = await intentar(form, async () => (id = await guardarMetodoPago({ id: editando || undefined, nombre: nombre.value, pais: pais.value })), editando ? "Método actualizado" : "Método creado");
     if (!ok) return;
     window.ui.closeModal("metodo-modal");
     render();
