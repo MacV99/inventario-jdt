@@ -113,7 +113,7 @@ export const ROL: Record<Rol, { label: string }> = {
 const KEY_DEMO = "jdt-inventario-demo";
 const KEY_CACHE = "jdt-inv-datos";
 const KEY_VER = "jdt-inv-ver-como";
-const VERSION = 5;
+const VERSION = 6;
 const hoy = () => new Date().toLocaleDateString("en-CA"); // AAAA-MM-DD en la hora local
 
 /** Prueba local sin sesión: datos de ejemplo (también en una copia armada con PUBLIC_DEMO=1). En la página publicada nunca. */
@@ -254,6 +254,13 @@ export const bodegas = () => (paisActual() ? load().bodegas.filter((b) => b.pais
 /** Todas, sin importar el país elegido. */
 export const todasBodegas = () => load().bodegas;
 export const productos = () => load().productos;
+/** Código de producto: JDT- + número de 4 cifras, seguido (JDT-0001, JDT-0002…). El siguiente libre. */
+export const siguienteCodigo = () => {
+  const n = Math.max(0, ...load().productos.map((p) => Number(/^JDT-(\d+)$/i.exec(p.codigo)?.[1] ?? 0)));
+  return `JDT-${String(n + 1).padStart(4, "0")}`;
+};
+/** Unidades para elegir en productos: las de siempre y las que ya se usan. */
+export const unidades = () => [...new Set(["und", "kg", "caja", "paquete", "juego", "par", ...load().productos.map((p) => p.unidad)].filter(Boolean))];
 /** Métodos de pago del país elegido en el menú (y los que sirven en todos). */
 export const metodosPago = () => load().metodos_pago.filter((m) => !paisActual() || !m.pais || m.pais === paisActual());
 /** Los activos que sirven en un país (para vender o recibir dinero ahí). */
@@ -931,7 +938,7 @@ function seed(): State {
     // Sin precios por ahora
     productos: NOMBRES.map((nombre, i) => ({
       id: `p${i + 1}`,
-      codigo: `P${String(i + 1).padStart(2, "0")}`,
+      codigo: `JDT-${String(i + 1).padStart(4, "0")}`,
       nombre,
       unidad: "und",
       precios: {},

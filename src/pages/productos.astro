@@ -49,11 +49,12 @@ import FormError from "../components/ui/FormError.astro";
       </div>
       <div class="field">
         <label for="pr-codigo">Código</label>
-        <input id="pr-codigo" name="codigo" class="input" placeholder="Ej. LIB-003" />
+        <input id="pr-codigo" name="codigo" class="input tnum" readonly />
+        <span class="hint">Se pone solo.</span>
       </div>
       <div class="field">
-        <label for="pr-unidad">Unidad</label>
-        <input id="pr-unidad" name="unidad" class="input" placeholder="und" />
+        <span class="label">Unidad</span>
+        <Select name="unidad" searchable creatable createLabel="Crear unidad" label="Unidad" options={[]} />
       </div>
       <div class="field span-2">
         <label for="pr-min">Avisar cuando queden menos de</label>
@@ -141,8 +142,8 @@ import FormError from "../components/ui/FormError.astro";
 <script>
   import "../lib/ui";
   import { initTableFilter } from "../lib/ui/table-filter";
-  import { productos, producto, stockFilas, guardarProducto, setActivo, kardex, bodegas, rutaMov, paises, TIPO_MOV } from "../lib/store";
-  import { money, num, day, esc, searchText, menu, intentar, parseNum, dsSelect, flashRow, opcionesLugar } from "../lib/view";
+  import { productos, producto, stockFilas, guardarProducto, setActivo, kardex, bodegas, rutaMov, paises, siguienteCodigo, unidades, TIPO_MOV } from "../lib/store";
+  import { money, num, day, esc, searchText, menu, intentar, parseNum, dsSelect, flashRow, opcionesLugar, sinNuevo } from "../lib/view";
 
   const scope = document.querySelector<HTMLElement>("[data-table]")!;
   const body = scope.querySelector<HTMLElement>("[data-body]")!;
@@ -187,6 +188,7 @@ import FormError from "../components/ui/FormError.astro";
   const modal = document.getElementById("prod-modal")!;
   const form = modal.querySelector<HTMLFormElement>("[data-form]")!;
   const field = (n: string) => form.querySelector<HTMLInputElement>(`[name=${n}]`)!;
+  const unidad = dsSelect(form, "ds-select[name=unidad]");
   let editando = "";
   function open(id = "") {
     editando = id;
@@ -195,8 +197,9 @@ import FormError from "../components/ui/FormError.astro";
     intentar(form, () => {});
     modal.querySelector("[data-modal-title]")!.textContent = p ? `Editar ${p.nombre}` : "Nuevo producto";
     field("nombre").value = p?.nombre ?? "";
-    field("codigo").value = p?.codigo ?? "";
-    field("unidad").value = p?.unidad ?? "und";
+    field("codigo").value = p?.codigo || siguienteCodigo();
+    unidad.setOptions(unidades().map((u) => ({ value: u, label: u })));
+    unidad.value = p?.unidad ?? "und";
     const ps = paises();
     form.querySelector("[data-precios]")!.innerHTML = ps.length
       ? ps
@@ -220,7 +223,7 @@ import FormError from "../components/ui/FormError.astro";
           id: editando || undefined,
           nombre: field("nombre").value,
           codigo: field("codigo").value,
-          unidad: field("unidad").value.trim() || "und",
+          unidad: sinNuevo(unidad.value).trim() || "und",
           precios: Object.fromEntries([...form.querySelectorAll<HTMLInputElement>("[data-pais]")].map((x) => [x.dataset.pais!, parseNum(x.value)])),
           stock_minimo: parseNum(field("minimo").value),
         })),
