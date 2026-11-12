@@ -75,6 +75,7 @@ const { title, role = "admin" } = Astro.props;
     flex-direction: column;
     gap: var(--page-gap);
     min-width: 0;
+    view-transition-name: page; /* al cambiar de pestaña, solo el contenido se anima (global.css) */
   }
 
   @media (min-width: 900px) {

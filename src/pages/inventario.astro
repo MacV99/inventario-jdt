@@ -102,6 +102,7 @@ import FormError from "../components/ui/FormError.astro";
   import "../lib/ui";
   import { initTableFilter } from "../lib/ui/table-filter";
   import { bodegas, productos, stockFilas, bodega, producto, cantidadEn, guardarConteo, paisActual } from "../lib/store";
+  import { contar } from "../lib/ui/motion";
   import { num, esc, searchText, uniqueOptions, dsSelect, urlParam, intentar, parseNum, opcionesLugar } from "../lib/view";
 
   const filas = stockFilas().map((f) => ({ ...f, b: bodega(f.bodega_id)!, p: producto(f.producto_id)! }));
@@ -144,7 +145,7 @@ import FormError from "../components/ui/FormError.astro";
     table.rescan();
   }
   const table = initTableFilter(scope, ({ visible }) => {
-    scope.querySelector("[data-total]")!.textContent = num(visible.reduce((a, r) => a + Number(r.dataset.cantidad), 0));
+    contar(scope.querySelector("[data-total]")!, num(visible.reduce((a, r) => a + Number(r.dataset.cantidad), 0)));
   });
   fPais.addEventListener("change", (e) => {
     if (!(e as CustomEvent).detail) return;

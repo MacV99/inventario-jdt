@@ -16,6 +16,7 @@
 // tanda. Buscador y filtros miran todas las filas y al cambiar vuelven a la primera tanda.
 
 import type { DsSelect } from "./select";
+import { suavizar } from "./motion";
 
 export interface FilterState {
   /** Filas que pasan todos los filtros. */
@@ -77,6 +78,9 @@ export function initTableFilter(scope: HTMLElement, onChange?: (state: FilterSta
       const count = more.querySelector("[data-more-count]");
       if (count) count.textContent = String(left);
     }
+    // Las filas que quedan aparecen con un fundido corto (más leve al escribir en el buscador)
+    scope.querySelectorAll("tbody").forEach((b) => suavizar(b, changed === "q"));
+    if (empty && !empty.hidden) suavizar(empty);
     const state: FilterState = { visible, active: { ...active }, query, changed };
     onChange?.(state);
     scope.dispatchEvent(new CustomEvent("table-filter", { detail: state }));

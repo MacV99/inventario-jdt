@@ -41,6 +41,28 @@ body {
   animation-duration: 0.12s;
 }
 
+/* El contenido (main) sale rápido y el nuevo entra subiendo apenas (2026-11-11) */
+::view-transition-old(page) {
+  animation: vtOut 0.1s var(--ease) both;
+}
+
+::view-transition-new(page) {
+  animation: vtIn 0.24s var(--ease) both;
+}
+
+@keyframes vtOut {
+  to {
+    opacity: 0;
+  }
+}
+
+@keyframes vtIn {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   @view-transition {
     navigation: none;
@@ -1703,12 +1725,47 @@ ds-menu .popover {
 .modal[open] {
   display: flex;
   flex-direction: column;
-  animation: modalIn 0.18s var(--ease);
 }
 
 .modal::backdrop {
   background-color: var(--modal-backdrop);
   backdrop-filter: blur(2px);
+}
+
+/* Abrir y cerrar con suavidad (2026-11-11): la ventana sube un poco y el fondo se oscurece.
+   Donde el navegador no lo soporta, abre y cierra como siempre. */
+.modal,
+.modal::backdrop {
+  opacity: 0;
+  transition:
+    opacity 0.18s var(--ease),
+    transform 0.18s var(--ease),
+    overlay 0.18s allow-discrete,
+    display 0.18s allow-discrete;
+}
+
+.modal {
+  transform: translateY(8px) scale(0.98);
+}
+
+.modal[open],
+.modal[open]::backdrop {
+  opacity: 1;
+}
+
+.modal[open] {
+  transform: none;
+}
+
+@starting-style {
+  .modal[open],
+  .modal[open]::backdrop {
+    opacity: 0;
+  }
+
+  .modal[open] {
+    transform: translateY(8px) scale(0.98);
+  }
 }
 
 /* Con una ventana abierta, la página de atrás no se mueve */
@@ -2114,6 +2171,11 @@ html:has(.modal[open]) {
   align-items: center;
   gap: var(--space-2);
   white-space: nowrap;
+}
+
+/* Pasar el mouse por una fila: el color entra suave */
+.table tbody tr {
+  transition: background-color 0.12s var(--ease);
 }
 
 /* Fila recién guardada: se ilumina un momento para ubicarla (lib/view.ts → flashRow) */

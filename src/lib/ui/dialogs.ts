@@ -81,7 +81,7 @@ function run(dialog: HTMLDialogElement, ok: HTMLButtonElement, cancel: HTMLButto
   return new Promise<boolean>((resolve) => {
     const finish = (result: boolean) => {
       dialog.close();
-      dialog.remove();
+      setTimeout(() => dialog.remove(), 250); // deja terminar la animación de cierre
       resolve(result);
     };
     ok.addEventListener("click", () => finish(true));
