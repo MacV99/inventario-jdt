@@ -64,10 +64,6 @@ const tipos = Object.entries(TIPO_MOV).map(([value, t]) => ({ value, label: t.la
         <DatePicker name="fecha" label="Fecha" />
       </div>
       <div class="field" data-show="compra">
-        <span class="label">Proveedor</span>
-        <Select name="proveedor" searchable creatable createLabel="Crear proveedor" placeholder="Elegir proveedor" options={[]} />
-      </div>
-      <div class="field" data-show="compra">
         <span class="label">Moneda</span>
         <Select name="moneda" value="COP" searchable label="Moneda" options={MONEDAS} />
       </div>
@@ -218,9 +214,9 @@ const tipos = Object.entries(TIPO_MOV).map(([value, t]) => ({ value, label: t.la
   import "../lib/ui";
   import { initTableFilter } from "../lib/ui/table-filter";
   import {
-    movimientos, bodegas, bodega, productos, proveedores, cantidadEn, costoPromedio, registrarMovimiento, anularMovimiento, totalMov, totalLocal, unidadesMov, TIPO_MOV, REGLAS, MONEDA, type TipoMov, type Movimiento, rutaMov, metodosPago, metodoPago, esVentaOficina, monedaDe, precioEn, tasaDe, producto,
+    movimientos, bodegas, bodega, productos, cantidadEn, costoPromedio, registrarMovimiento, anularMovimiento, totalMov, totalLocal, unidadesMov, TIPO_MOV, REGLAS, MONEDA, type TipoMov, type Movimiento, rutaMov, metodosPago, metodoPago, esVentaOficina, monedaDe, precioEn, tasaDe, producto,
   } from "../lib/store";
-  import { money, num, day, dayYear, esc, searchText, menu, dsSelect, intentar, parseNum, urlParam, today, flashRow, sinNuevo, opcionesLugar, type DsSelectEl } from "../lib/view";
+  import { money, num, day, dayYear, esc, searchText, menu, dsSelect, intentar, parseNum, urlParam, today, flashRow, opcionesLugar, type DsSelectEl } from "../lib/view";
 
   const scope = document.querySelector<HTMLElement>("[data-table]")!;
   const body = scope.querySelector<HTMLElement>("[data-body]")!;
@@ -265,7 +261,7 @@ const tipos = Object.entries(TIPO_MOV).map(([value, t]) => ({ value, label: t.la
   const modal = document.getElementById("mov-modal")!;
   const form = modal.querySelector<HTMLFormElement>("[data-mov-form]")!;
   const sel = (name: string) => dsSelect(form, `ds-select[name=${name}]`);
-  const tipo = sel("tipo"), origen = sel("origen"), destino = sel("destino"), prov = sel("proveedor"), moneda = sel("moneda"), metodo = sel("metodo");
+  const tipo = sel("tipo"), origen = sel("origen"), destino = sel("destino"), moneda = sel("moneda"), metodo = sel("metodo");
   const fecha = form.querySelector<HTMLElement & { value: string }>("ds-date[name=fecha]")!;
   const items = form.querySelector<HTMLElement>("[data-items]")!;
   const tpl = modal.querySelector<HTMLTemplateElement>("[data-item-tpl]")!;
@@ -361,8 +357,6 @@ const tipos = Object.entries(TIPO_MOV).map(([value, t]) => ({ value, label: t.la
     tipo.value = preset.tipo && preset.tipo in TIPO_MOV ? preset.tipo : "compra";
     fecha.value = today();
     moneda.value = MONEDA;
-    prov.setOptions(proveedores().map((p) => ({ value: p.id, label: p.nombre })));
-    prov.value = "";
     metodo.setOptions(metodosPago().filter((m) => m.activo).map((m) => ({ value: String(m.id), label: m.nombre })));
     metodo.value = "";
     sync();
@@ -400,15 +394,11 @@ const tipos = Object.entries(TIPO_MOV).map(([value, t]) => ({ value, label: t.la
   modal.querySelector("[data-save]")!.addEventListener("click", async () => {
     let nuevo = 0;
     const ok = await intentar(form, async () => {
-      // Proveedor nuevo: se crea en la misma operación
-      const nuevoProv = prov.value !== sinNuevo(prov.value);
       const mov = await registrarMovimiento({
         tipo: t(),
         fecha: fecha.value,
         origen_id: origen.value,
         destino_id: destino.value,
-        proveedor_id: nuevoProv ? undefined : prov.value,
-        proveedor_nuevo: nuevoProv ? sinNuevo(prov.value) : undefined,
         metodo_pago_id: metodo.value ? Number(metodo.value) : undefined,
         curso: form.querySelector<HTMLInputElement>("[name=curso]")!.value,
         moneda: moneda.value,

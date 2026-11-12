@@ -83,7 +83,7 @@ export const MONEDAS = [
 ].map(([value, nombre]) => ({ value: value!, label: `${value} · ${nombre}` }));
 
 export const TIPO_MOV: Record<TipoMov, { label: string; icon: string; desde: string; hacia: string }> = {
-  compra: { label: "Compra", icon: "bi-bag-plus", desde: "Proveedor", hacia: "Bodega" },
+  compra: { label: "Compra", icon: "bi-bag-plus", desde: "Afuera", hacia: "Bodega" },
   traslado: { label: "Traslado", icon: "bi-arrow-left-right", desde: "Bodega", hacia: "Otra bodega" },
   entrega: { label: "Entrega", icon: "bi-box-arrow-right", desde: "Bodega", hacia: "Maleta" },
   devolucion: { label: "Devolución", icon: "bi-box-arrow-in-left", desde: "Maleta", hacia: "Bodega" },
@@ -253,7 +253,6 @@ export const bodegas = () => (paisActual() ? load().bodegas.filter((b) => b.pais
 /** Todas, sin importar el país elegido. */
 export const todasBodegas = () => load().bodegas;
 export const productos = () => load().productos;
-export const proveedores = () => load().proveedores;
 export const metodosPago = () => load().metodos_pago;
 export const paises = () => load().paises;
 export const pais = (nombre?: string | null) => load().paises.find((p) => p.nombre === nombre);
@@ -269,7 +268,6 @@ export const movimientos = () => load().movimientos.filter((m) => !paisActual() 
 export const pagos = () => load().pagos.filter((p) => delPais(p.bodega_id)).sort((a, b) => b.id - a.id);
 export const bodega = (id?: string | null) => load().bodegas.find((b) => b.id === id);
 export const producto = (id: string) => load().productos.find((p) => p.id === id);
-export const proveedor = (id?: string | null) => load().proveedores.find((p) => p.id === id);
 export const metodoPago = (id?: number | null) => load().metodos_pago.find((m) => m.id === id);
 export const maletaDe = (perfilId: string) => load().bodegas.find((b) => b.monitor_id === perfilId);
 /** Venta hecha en la oficina (sale de una bodega, no de una maleta). */
@@ -383,7 +381,7 @@ export function kardex(productoId: string, bodegaId = "") {
 
 /** De dónde sale y a dónde va un movimiento, en palabras. */
 export function rutaMov(m: Movimiento) {
-  const de = m.tipo === "compra" ? proveedor(m.proveedor_id)?.nombre ?? "Proveedor" : m.origen_id ? bodega(m.origen_id)?.nombre ?? "—" : "Ajuste";
+  const de = m.tipo === "compra" ? "Compra" : m.origen_id ? bodega(m.origen_id)?.nombre ?? "—" : "Ajuste";
   const a = m.tipo === "venta" ? "Cliente" : m.destino_id ? bodega(m.destino_id)?.nombre ?? "—" : "Salida";
   return { de, a };
 }
@@ -459,8 +457,12 @@ async function llamar(fn: string, args: Record<string, unknown>) {
   return r;
 }
 
+const SIN_PROVEEDOR = "Sin proveedor";
+
 /** Registra uno o varios movimientos (todo o nada). Lanza Error con el motivo si algo no cuadra. */
 export async function registrarMovimientos(input: NuevoMovimiento[]): Promise<Movimiento[]> {
+  // Ya no se manejan proveedores: la base aún pide uno en las compras, así que va uno fijo
+  input = input.map((m) => (m.tipo === "compra" && !m.proveedor_id && !m.proveedor_nuevo ? { ...m, proveedor_nuevo: SIN_PROVEEDOR } : m));
   if (!DEMO) {
     const r = await llamar("inv_registrar", { p: input });
     return (r.ids ?? []).map((id) => load().movimientos.find((m) => m.id === Number(id))!);
@@ -642,22 +644,6 @@ export async function guardarBodega(b: BodegaIn) {
   const id = bodegaLocal(b);
   saveDemo();
   return id;
-}
-
-export async function guardarProveedor(p: { id?: string; nombre: string; contacto: string }) {
-  if (!DEMO) {
-    const [id] = await guardarBase("proveedores", p);
-    return proveedor(id)!;
-  }
-  const s = load();
-  const nombre = p.nombre.trim();
-  if (!nombre) throw new Error("Escribe el nombre del proveedor.");
-  if (s.proveedores.some((x) => llave(x.nombre) === llave(nombre) && x.id !== p.id)) throw new Error("Ya existe ese proveedor.");
-  let old = s.proveedores.find((x) => x.id === p.id);
-  if (old) Object.assign(old, { nombre, contacto: p.contacto.trim() });
-  else s.proveedores.push((old = { id: nuevoId("v", s.proveedores), nombre, contacto: p.contacto.trim() }));
-  saveDemo();
-  return old;
 }
 
 /** Países: crear o editar (nombre, moneda y cuántos pesos vale 1 unidad). `antes` = nombre actual al editar. */
@@ -948,10 +934,7 @@ function seed(): State {
       stock_minimo: 10,
       activo: true,
     })),
-    proveedores: [
-      { id: "v1", nombre: "Proveedor principal", contacto: "310 555 1234" },
-      { id: "v2", nombre: "Importadora", contacto: "320 555 8899" },
-    ],
+    proveedores: [{ id: "v1", nombre: "Sin proveedor", contacto: "" }],
     metodos_pago: [
       { id: 1, nombre: "Efectivo", activo: true },
       { id: 2, nombre: "Nequi", activo: true },
@@ -976,7 +959,7 @@ function seed(): State {
       tipo: "compra",
       fecha: "2026-10-05",
       destino_id: b,
-      proveedor_id: bi % 2 ? "v2" : "v1",
+      proveedor_id: "v1",
       nota: "Inventario inicial",
       items: NOMBRES.map((_, pi) => it(`p${pi + 1}`, cant(bi + 1, pi + 1) * (b === "b1" ? 3 : 1), costo(pi + 1))),
     }),
