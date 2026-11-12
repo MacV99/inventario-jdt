@@ -123,6 +123,7 @@ import FormError from "../components/ui/FormError.astro";
             { value: "maleta", label: "Ver maleta y ventas", icon: "bi-briefcase" },
             { value: "entregar", label: "Entregarle mercancía", icon: "bi-box-arrow-right" },
             { value: "devolucion", label: "Recibir devolución", icon: "bi-box-arrow-in-left" },
+            { value: "pasar", label: "Pasar a otra maleta", icon: "bi-people" },
             { value: "dinero", label: "Registrar dinero recibido", icon: "bi-cash" },
           ])}</td>
         </tr>`;
@@ -204,6 +205,7 @@ import FormError from "../components/ui/FormError.astro";
     if (value === "maleta") verMaleta(id);
     if (value === "entregar") location.href = `/movimientos?nuevo=entrega&destino=${id}`;
     if (value === "devolucion") location.href = `/movimientos?nuevo=devolucion&origen=${id}`;
+    if (value === "pasar") location.href = `/movimientos?nuevo=entre_maletas&origen=${id}`;
     if (value === "dinero") abrirDinero(id);
   });
 </script>

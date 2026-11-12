@@ -10,7 +10,7 @@
 import { conBase, haySesion, sesionId, rpc, aEntrar, irA } from "./api";
 
 export type Rol = "superadmin" | "admin" | "monitor";
-export type TipoMov = "compra" | "traslado" | "entrega" | "devolucion" | "venta" | "ajuste_entrada" | "ajuste_salida";
+export type TipoMov = "compra" | "traslado" | "entrega" | "devolucion" | "entre_maletas" | "venta" | "ajuste_entrada" | "ajuste_salida";
 export type TipoBodega = "bodega" | "monitor";
 
 /** propio = se creó en el inventario (su contraseña se cambia aquí; la de alguien del call center se cambia allá). */
@@ -88,6 +88,7 @@ export const TIPO_MOV: Record<TipoMov, { label: string; icon: string; desde: str
   traslado: { label: "Traslado", icon: "bi-arrow-left-right", desde: "Bodega", hacia: "Otra bodega" },
   entrega: { label: "Entrega", icon: "bi-box-arrow-right", desde: "Bodega", hacia: "Maleta" },
   devolucion: { label: "Devolución", icon: "bi-box-arrow-in-left", desde: "Maleta", hacia: "Bodega" },
+  entre_maletas: { label: "Entre maletas", icon: "bi-people", desde: "Maleta", hacia: "Otra maleta" },
   venta: { label: "Venta", icon: "bi-cash-coin", desde: "Maleta u oficina", hacia: "Cliente" },
   ajuste_entrada: { label: "Ajuste de entrada", icon: "bi-plus-circle", desde: "Sobrante", hacia: "Bodega o maleta" },
   ajuste_salida: { label: "Ajuste de salida", icon: "bi-dash-circle", desde: "Bodega o maleta", hacia: "Daño o pérdida" },
@@ -99,6 +100,7 @@ export const REGLAS: Record<TipoMov, { origen: TipoBodega[] | null; destino: Tip
   traslado: { origen: ["bodega"], destino: ["bodega"] },
   entrega: { origen: ["bodega"], destino: ["monitor"] },
   devolucion: { origen: ["monitor"], destino: ["bodega"] },
+  entre_maletas: { origen: ["monitor"], destino: ["monitor"] },
   venta: { origen: ["bodega", "monitor"], destino: null },
   ajuste_entrada: { origen: null, destino: ["bodega", "monitor"] },
   ajuste_salida: { origen: ["bodega", "monitor"], destino: null },

@@ -113,7 +113,7 @@ where not exists (select 1 from inventario.metodos_pago);
 create table if not exists inventario.movimientos (
   id             bigint generated always as identity (start with 1001) primary key,
   tipo           text not null check (tipo in
-                   ('compra','traslado','entrega','devolucion','venta','ajuste_entrada','ajuste_salida')),
+                   ('compra','traslado','entrega','devolucion','entre_maletas','venta','ajuste_entrada','ajuste_salida')),
   fecha          date not null default current_date,
   origen_id      uuid references inventario.bodegas(id),
   destino_id     uuid references inventario.bodegas(id),
@@ -130,6 +130,10 @@ create table if not exists inventario.movimientos (
   created_at     timestamptz not null default now(),
   check (origen_id is distinct from destino_id)
 );
+-- De maleta a maleta (2026-11-11): la lista de tipos se pone al día también en una base ya creada
+alter table inventario.movimientos drop constraint if exists movimientos_tipo_check;
+alter table inventario.movimientos add constraint movimientos_tipo_check check (tipo in
+  ('compra','traslado','entrega','devolucion','entre_maletas','venta','ajuste_entrada','ajuste_salida'));
 create index if not exists movimientos_origen  on inventario.movimientos (origen_id);
 create index if not exists movimientos_destino on inventario.movimientos (destino_id);
 
@@ -263,6 +267,7 @@ begin
     when 'traslado'       then v_o.tipo = 'bodega' and v_d.tipo = 'bodega'
     when 'entrega'        then v_o.tipo = 'bodega' and v_d.tipo = 'monitor'
     when 'devolucion'     then v_o.tipo = 'monitor' and v_d.tipo = 'bodega'
+    when 'entre_maletas'  then v_o.tipo = 'monitor' and v_d.tipo = 'monitor' and v_o.id <> v_d.id
     else false
   end, false) then
     raise exception 'El origen o el destino no corresponden a este tipo de movimiento.';

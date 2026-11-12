@@ -213,4 +213,19 @@ select t_ok((select c.costo_promedio = (select costo_promedio from t_costo) from
 select public.inv_anular((select max(id) from inventario.movimientos where tipo = 'compra'));
 select t_ok((select c.costo_promedio = (select costo_promedio from t_costo) from inventario.producto_costos c join inventario.productos p on p.id = c.producto_id where p.codigo='LIB-001'), 'anular la compra sin costo tampoco lo cambia');
 
+-- 17. De maleta a maleta (2026-11-11)
+select public.inv_registrar(jsonb_build_object('tipo','entrega','origen_id',(select id from inventario.bodegas where nombre='Bodega Bogotá'),
+  'destino_id',(select id from inventario.bodegas where nombre='Maleta Carlos Rojas'),'items',jsonb_build_array(jsonb_build_object('producto_id',(select id from inventario.productos where codigo='LIB-001'),'cantidad',2))));
+create temp table t_antes as select coalesce((select cantidad from inventario.stock s join inventario.bodegas b on b.id = s.bodega_id join inventario.productos p on p.id = s.producto_id
+  where b.nombre = 'Maleta Jheiner P' and p.codigo = 'LIB-001'), 0) as n;
+select public.inv_registrar(jsonb_build_object('tipo','entre_maletas','origen_id',(select id from inventario.bodegas where nombre='Maleta Carlos Rojas'),
+  'destino_id',(select id from inventario.bodegas where nombre='Maleta Jheiner P'),'items',jsonb_build_array(jsonb_build_object('producto_id',(select id from inventario.productos where codigo='LIB-001'),'cantidad',2))));
+select t_ok((select s.cantidad = (select n from t_antes) + 2 from inventario.stock s join inventario.bodegas b on b.id = s.bodega_id join inventario.productos p on p.id = s.producto_id
+  where b.nombre = 'Maleta Jheiner P' and p.codigo = 'LIB-001'), 'pasan 2 de la maleta de carlos a la de jheiner');
+select t_espera_error(format($q$select public.inv_registrar('{"tipo":"entre_maletas","origen_id":"%1$s","destino_id":"%1$s","items":[{"producto_id":"%2$s","cantidad":1}]}')$q$,
+  (select id from inventario.bodegas where nombre='Maleta Jheiner P'), (select id from inventario.productos where codigo='LIB-001')), 'no corresponden');
+select t_espera_error(format($q$select public.inv_registrar('{"tipo":"entre_maletas","origen_id":"%s","destino_id":"%s","items":[{"producto_id":"%s","cantidad":1}]}')$q$,
+  (select id from inventario.bodegas where nombre='Bodega Bogotá'), (select id from inventario.bodegas where nombre='Maleta Jheiner P'), (select id from inventario.productos where codigo='LIB-001')), 'no corresponden');
+select t_ok(true, 'entre maletas: no a la misma ni desde una bodega');
+
 \echo TODAS LAS PRUEBAS PASARON

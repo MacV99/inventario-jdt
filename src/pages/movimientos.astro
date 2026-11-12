@@ -1,5 +1,5 @@
 ---
-// Movimientos (admin): compras, traslados, entregas, devoluciones, ventas y ajustes + registrar uno nuevo.
+// Movimientos (admin): compras, traslados, entregas, devoluciones, entre maletas, ventas y ajustes + registrar uno nuevo.
 // Nada se borra: un error se anula y queda el registro.
 // Dirección: ?nuevo abre el formulario (?nuevo=entrega&destino=m1 lo deja listo) · ?ver=1012 abre el detalle.
 import AppLayout from "../layouts/AppLayout.astro";
@@ -63,11 +63,11 @@ const tipos = Object.entries(TIPO_MOV).map(([value, t]) => ({ value, label: t.la
         <span class="label">Fecha</span>
         <DatePicker name="fecha" label="Fecha" />
       </div>
-      <div class="field" data-show="traslado entrega devolucion venta ajuste_salida">
+      <div class="field" data-show="traslado entrega devolucion entre_maletas venta ajuste_salida">
         <span class="label">Sale de</span>
         <Select name="origen" searchable placeholder="Elegir" options={[]} />
       </div>
-      <div class="field" data-show="compra traslado entrega devolucion ajuste_entrada">
+      <div class="field" data-show="compra traslado entrega devolucion entre_maletas ajuste_entrada">
         <span class="label">Entra a</span>
         <Select name="destino" searchable placeholder="Elegir" options={[]} />
       </div>
