@@ -39,10 +39,12 @@ const { title, role = "admin" } = Astro.props;
 
 <script>
   import "../lib/ui";
-  import { reiniciar, DEMO } from "../lib/store";
+  import { reiniciar, DEMO, paisActual } from "../lib/store";
   import { initMoneyInputs } from "../lib/view";
 
   initMoneyInputs();
+  // Con un país elegido en el menú, el filtro «País» de cada pantalla sobra
+  if (paisActual()) document.querySelectorAll<HTMLElement>('main ds-select[data-filter="pais"]').forEach((el) => (el.hidden = true));
   document.querySelector<HTMLElement>("[data-demo-note]")!.hidden = !DEMO;
 
   document.querySelector("[data-demo-reset]")?.addEventListener("click", async () => {

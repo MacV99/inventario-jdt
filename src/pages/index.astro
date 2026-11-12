@@ -1,5 +1,6 @@
 ---
-// Resumen (admin): cifras del mes, valor del inventario por bodega, productos por agotarse y últimos movimientos.
+// Resumen (admin): del país elegido, cifras del mes, valor por bodega, por agotarse y últimos movimientos.
+// En global (sin país): solo una fila corta por país.
 import AppLayout from "../layouts/AppLayout.astro";
 import PageHeader from "../components/ui/PageHeader.astro";
 import StatCard from "../components/ui/StatCard.astro";
@@ -10,14 +11,30 @@ import StatCard from "../components/ui/StatCard.astro";
     <a slot="actions" href="/movimientos?nuevo" class="btn btn-primary"><i class="bi bi-plus-lg" aria-hidden="true"></i>Nuevo movimiento</a>
   </PageHeader>
 
-  <section class="card kpis" data-kpis>
+  <!-- Global (sin país elegido): pocos datos, uno por país -->
+  <section class="card card-list" data-global hidden>
+    <div class="card-title">
+      <h2 class="caps">Por país</h2>
+      <span class="muted small">Elige un país en el menú para ver todo</span>
+    </div>
+    <div class="table-wrap">
+      <table class="table">
+        <thead>
+          <tr><th>País</th><th class="num">Productos</th><th class="num">Bodegas</th><th class="num">Vendido este mes</th></tr>
+        </thead>
+        <tbody data-paises></tbody>
+      </table>
+    </div>
+  </section>
+
+  <section class="card kpis" data-kpis data-local>
     <StatCard label="Valor del inventario" value="—" dataKey="valor" hint="Todo lo que hay en bodegas y maletas, al costo promedio" />
     <StatCard label="Vendido este mes" value="—" dataKey="vendido" />
     <StatCard label="Ganancia este mes" value="—" dataKey="ganancia" hint="Precio cobrado menos costo" />
     <StatCard label="Por recibir" value="—" dataKey="debe" hint="Dinero de ventas que los monitores no han entregado" />
   </section>
 
-  <div class="grid-2">
+  <div class="grid-2" data-local>
     <section class="card card-list">
       <div class="card-title">
         <h2 class="caps">Valor por bodega</h2>
@@ -46,7 +63,7 @@ import StatCard from "../components/ui/StatCard.astro";
     </section>
   </div>
 
-  <section class="card card-list">
+  <section class="card card-list" data-local>
     <div class="card-title">
       <h2 class="caps">Últimos movimientos</h2>
       <a href="/movimientos" class="small">Ver todos</a>
@@ -82,6 +99,11 @@ import StatCard from "../components/ui/StatCard.astro";
     gap: var(--space-2);
   }
 
+  [data-paises] :global(.fila-total td) {
+    border-top: 1px solid var(--clr-border-strong, var(--clr-border));
+    font-weight: 700;
+  }
+
   .hbars :global(.hbar) {
     grid-template-columns: minmax(110px, 170px) 1fr minmax(80px, auto);
     color: inherit;
@@ -101,11 +123,47 @@ import StatCard from "../components/ui/StatCard.astro";
 
 <script>
   import { setKpi } from "../lib/ui/kpi";
-  import { bodegas, productos, stockFilas, ventas, totalMov, gananciaMov, cuadre, movimientos, unidadesMov, rutaMov, TIPO_MOV } from "../lib/store";
+  import { bodegas, productos, stockFilas, ventas, totalMov, gananciaMov, cuadre, movimientos, unidadesMov, rutaMov, paises, paisActual, elegirPais, TIPO_MOV } from "../lib/store";
   import { money, num, day, esc, monthLabel, today } from "../lib/view";
 
   const mes = today().slice(0, 7);
-  document.querySelector("[data-page-subtitle]")!.textContent = monthLabel(mes);
+  const elegido = paisActual();
+  document.querySelector("[data-page-subtitle]")!.textContent = `${elegido || "Global"} · ${monthLabel(mes)}`;
+
+  // Global: una fila por país (productos, bodegas y lo vendido este mes en pesos)
+  if (!elegido) {
+    document.querySelector<HTMLElement>("[data-global]")!.hidden = false;
+    document.querySelectorAll<HTMLElement>("[data-local]").forEach((el) => (el.hidden = true));
+    const fs = stockFilas();
+    const vs = ventas().filter((v) => v.fecha.startsWith(mes));
+    const filasPais = paises().map((p) => {
+      const ids = new Set(bodegas().filter((b) => b.pais === p.nombre).map((b) => b.id));
+      return {
+        nombre: p.nombre,
+        unidades: fs.filter((f) => ids.has(f.bodega_id)).reduce((a, f) => a + f.cantidad, 0),
+        bodegas: bodegas().filter((b) => b.pais === p.nombre && b.tipo === "bodega" && b.activa).length,
+        vendido: vs.filter((v) => ids.has(v.origen_id ?? "")).reduce((a, v) => a + totalMov(v), 0),
+      };
+    });
+    const suma = (k: "unidades" | "bodegas" | "vendido") => filasPais.reduce((a, x) => a + x[k], 0);
+    document.querySelector("[data-paises]")!.innerHTML = filasPais
+      .map(
+        (x) => `<tr>
+          <td><a href="/" class="strong" data-ir-pais="${esc(x.nombre)}">${esc(x.nombre)}</a></td>
+          <td class="num tnum strong">${num(x.unidades)}</td>
+          <td class="num tnum">${num(x.bodegas)}</td>
+          <td class="num tnum">${money(x.vendido)}</td>
+        </tr>`,
+      )
+      .join("") + `<tr class="fila-total"><td class="strong">Total</td><td class="num tnum strong">${num(suma("unidades"))}</td><td class="num tnum">${num(suma("bodegas"))}</td><td class="num tnum">${money(suma("vendido"))}</td></tr>`;
+    document.querySelector("[data-paises]")!.addEventListener("click", (e) => {
+      const b = (e.target as HTMLElement).closest<HTMLElement>("[data-ir-pais]");
+      if (!b) return;
+      e.preventDefault();
+      elegirPais(b.dataset.irPais!);
+      location.reload();
+    });
+  }
 
   const filas = stockFilas();
   const kpis = document.querySelector<HTMLElement>("[data-kpis]")!;

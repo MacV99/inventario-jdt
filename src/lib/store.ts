@@ -219,11 +219,39 @@ export function reiniciar() {
   saveDemo();
 }
 
+// ── País elegido ─────────────────────────────────────────────────────
+// El admin trabaja un país a la vez (se elige arriba en el menú y se recuerda en este navegador).
+// Con un país elegido, bodegas, maletas, movimientos, pagos y stock muestran solo los de ese país.
+// Vacío = global (todos los países). Los monitores no eligen: ya ven solo lo suyo.
+const KEY_PAIS = "jdt-inv-pais";
+let paisElegido: string | undefined;
+export const paisActual = () => {
+  if (paisElegido !== undefined) return paisElegido;
+  let p = "";
+  try {
+    p = localStorage.getItem(KEY_PAIS) ?? "";
+  } catch {}
+  paisElegido = load().yo.rol !== "monitor" && load().paises.some((x) => x.nombre === p) ? p : "";
+  return paisElegido;
+};
+export function elegirPais(p: string) {
+  try {
+    localStorage.setItem(KEY_PAIS, p);
+  } catch {}
+  paisElegido = undefined;
+  cambio();
+}
+/** ¿El lugar es del país elegido? (global = todos) */
+const delPais = (id?: string | null) => !!id && (!paisActual() || load().bodegas.find((b) => b.id === id)?.pais === paisActual());
+
 // ── Lecturas ─────────────────────────────────────────────────────────
 export const yo = () => load().yo;
 export const esAdmin = () => load().yo.rol !== "monitor";
 export const perfiles = () => load().perfiles;
-export const bodegas = () => load().bodegas;
+/** Bodegas y maletas del país elegido. */
+export const bodegas = () => (paisActual() ? load().bodegas.filter((b) => b.pais === paisActual()) : load().bodegas);
+/** Todas, sin importar el país elegido. */
+export const todasBodegas = () => load().bodegas;
 export const productos = () => load().productos;
 export const proveedores = () => load().proveedores;
 export const metodosPago = () => load().metodos_pago;
@@ -237,8 +265,8 @@ export const monedaDe = (b?: { pais: string } | null) => {
 /** Precio de venta de un producto en un país (0 = sin precio ahí). */
 export const precioEn = (productoId: string, paisNombre?: string | null) => (paisNombre && producto(productoId)?.precios[paisNombre]) || 0;
 /** Del más nuevo al más viejo (se agregan en orden, así que basta invertir). */
-export const movimientos = () => load().movimientos.slice().reverse();
-export const pagos = () => [...load().pagos].sort((a, b) => b.id - a.id);
+export const movimientos = () => load().movimientos.filter((m) => !paisActual() || delPais(m.origen_id) || delPais(m.destino_id)).reverse();
+export const pagos = () => load().pagos.filter((p) => delPais(p.bodega_id)).sort((a, b) => b.id - a.id);
 export const bodega = (id?: string | null) => load().bodegas.find((b) => b.id === id);
 export const producto = (id: string) => load().productos.find((p) => p.id === id);
 export const proveedor = (id?: string | null) => load().proveedores.find((p) => p.id === id);
@@ -272,7 +300,7 @@ export function stock(state = load()) {
 }
 
 /** Filas de stock con cantidad > 0. */
-export const stockFilas = () => (memo.filas ??= calcFilas());
+export const stockFilas = () => (memo.filas ??= calcFilas().filter((f) => delPais(f.bodega_id)));
 
 function calcFilas() {
   const costos = costoPromedio();
@@ -379,8 +407,8 @@ export const tasaDe = (moneda: string) => (moneda === MONEDA ? 1 : load().paises
 export function cuadre() {
   const filas = stockFilas();
   const vs = ventas();
-  return load()
-    .bodegas.filter((b) => b.tipo === "monitor")
+  return bodegas()
+    .filter((b) => b.tipo === "monitor")
     .map((b) => {
       const { moneda, tasa } = monedaDe(b);
       const s = filas.filter((f) => f.bodega_id === b.id);

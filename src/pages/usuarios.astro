@@ -110,7 +110,7 @@ import PasswordInput from "../components/ui/PasswordInput.astro";
 <script>
   import "../lib/ui";
   import { initTableFilter } from "../lib/ui/table-filter";
-  import { perfiles, bodegas, paises, maletaDe, crearUsuario, cambiarUsuario, yo, ROL, type Perfil } from "../lib/store";
+  import { perfiles, todasBodegas, paises, maletaDe, crearUsuario, cambiarUsuario, yo, ROL, type Perfil } from "../lib/store";
   import { day, esc, searchText, menu, avatar, intentar, dsSelect, uniqueOptions, flashRow, sinNuevo as texto, type DsSelectEl } from "../lib/view";
 
   const scope = document.querySelector<HTMLElement>("[data-table]")!;
@@ -165,7 +165,7 @@ import PasswordInput from "../components/ui/PasswordInput.astro";
   // Países: los de Países y monedas. Ciudades: las que ya hay en ese país (o una nueva)
   const opcionesLugar = (pais: DsSelectEl, ciudad: DsSelectEl) => {
     pais.setOptions(paises().map((x) => ({ value: x.nombre, label: x.nombre, hint: x.moneda })));
-    ciudad.setOptions(uniqueOptions(bodegas().filter((b) => !pais.value || b.pais === pais.value).map((b) => b.ciudad)));
+    ciudad.setOptions(uniqueOptions(todasBodegas().filter((b) => !pais.value || b.pais === pais.value).map((b) => b.ciudad)));
   };
   const opciones = () => opcionesLugar(pais, ciudad);
   const verMaleta = () => form.querySelectorAll<HTMLElement>("[data-maleta]").forEach((el) => (el.hidden = rol.value !== "monitor"));

@@ -2,6 +2,7 @@
 import ThemeSwitch from "./ThemeSwitch.astro";
 import Avatar from "../ui/Avatar.astro";
 import Menu from "../ui/Menu.astro";
+import Select from "../ui/Select.astro";
 
 interface Props {
   current: string;
@@ -83,6 +84,15 @@ const isActive = (href: string) => href === activeHref;
       <i class="bi bi-x-lg" aria-hidden="true"></i>
     </button>
   </div>
+
+  {
+    role === "admin" && (
+      <div class="pais-pick nav-text">
+        <p class="caps">País</p>
+        <Select id="pais-actual" searchable label="País" value="" options={[{ value: "", label: "Global" }]} />
+      </div>
+    )
+  }
 
   <nav aria-label="Principal">
     {
@@ -230,6 +240,18 @@ const isActive = (href: string) => href === activeHref;
   .nav-toggle {
     flex-shrink: 0;
     font-size: 0.95rem;
+  }
+
+  .pais-pick {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-1);
+    margin-top: var(--space-2);
+    padding: 0 var(--space-1);
+  }
+
+  .pais-pick .caps {
+    padding: 0 var(--space-2);
   }
 
   nav {
@@ -470,9 +492,21 @@ const isActive = (href: string) => href === activeHref;
   document.addEventListener("keydown", (e) => e.key === "Escape" && root.dataset.drawer && setDrawer(false));
 
   // Cuenta: quién entró, «Ver como» (solo en la prueba local) y cerrar sesión
-  import { yo, ROL, DEMO, verComo, olvidar } from "../../lib/store";
+  import "../../lib/ui";
+  import { yo, ROL, DEMO, verComo, olvidar, paises, paisActual, elegirPais } from "../../lib/store";
   import { salir } from "../../lib/api";
   import { avatar } from "../../lib/view";
+
+  // País: todo el sistema muestra solo el elegido; «Global» = todos
+  const paisSel = document.querySelector<HTMLElement & { value: string; setOptions(o: { value: string; label: string; hint?: string }[]): void }>("#pais-actual");
+  if (paisSel) {
+    paisSel.setOptions([{ value: "", label: "Global", hint: "Todos" }, ...paises().map((p) => ({ value: p.nombre, label: p.nombre, hint: p.moneda }))]);
+    paisSel.value = paisActual();
+    paisSel.addEventListener("change", () => {
+      elegirPais(paisSel.value);
+      location.reload();
+    });
+  }
 
   const chip = document.querySelector<HTMLElement>("[data-user-chip]")!;
   const me = yo();

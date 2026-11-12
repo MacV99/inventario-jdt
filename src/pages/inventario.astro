@@ -1,53 +1,41 @@
 ---
-// Inventario (admin): qué hay en cada bodega y maleta (filtros por país, ciudad y tipo; los KPIs siguen al filtro)
-// y el total por producto. Se abre filtrado con ?ubicacion=<id> (desde Resumen o Bodegas).
+// Inventario (admin): arriba solo cuántos productos hay en total; al elegir país o bodega sale el detalle.
+// Sin precios por ahora. Se abre filtrado con ?ubicacion=<id> (desde Resumen o Bodegas).
 import AppLayout from "../layouts/AppLayout.astro";
 import PageHeader from "../components/ui/PageHeader.astro";
-import StatCard from "../components/ui/StatCard.astro";
 import Select from "../components/ui/Select.astro";
 import Modal from "../components/ui/Modal.astro";
 import FormError from "../components/ui/FormError.astro";
 ---
 
 <AppLayout title="Inventario">
-  <PageHeader title="Inventario" subtitle="Lo que hay en cada bodega y maleta">
+  <PageHeader title="Inventario" subtitle="Cuántos productos hay">
     <button slot="actions" type="button" class="btn btn-ghost" data-conteo><i class="bi bi-clipboard-check" aria-hidden="true"></i>Contar una bodega</button>
     <a slot="actions" href="/movimientos?nuevo" class="btn btn-primary"><i class="bi bi-plus-lg" aria-hidden="true"></i>Nuevo movimiento</a>
   </PageHeader>
 
-  <section class="card kpis" data-kpis>
-    <StatCard label="Valor" value="—" dataKey="valor" hint="Al costo promedio" />
-    <StatCard label="Unidades" value="—" dataKey="unidades" />
-    <StatCard label="Productos" value="—" dataKey="productos" />
-    <StatCard label="Ubicaciones" value="—" dataKey="ubicaciones" />
-  </section>
-
-  <div class="tabs" role="tablist" aria-label="Vista">
-    <button class="tab" role="tab" aria-selected="true" data-tab="ubicacion">Por ubicación</button>
-    <button class="tab" role="tab" aria-selected="false" data-tab="producto">Por producto</button>
-  </div>
-
-  <section class="card card-list" data-table data-panel="ubicacion">
+  <section class="card card-list" data-table>
+    <div class="total">
+      <p class="caps">Productos en total</p>
+      <p class="total-num tnum" data-total>—</p>
+      <p class="muted small" data-total-sub></p>
+    </div>
     <div class="toolbar">
+      <Select value="" searchable filter="pais" label="País" options={[{ value: "", label: "Todos los países" }]} id="f-pais" />
+      <Select value="" searchable filter="ubicacion" label="Bodega" options={[{ value: "", label: "Todas las bodegas" }]} id="f-ubicacion" />
       <label class="input-icon grow">
         <i class="bi bi-search" aria-hidden="true"></i>
-        <input class="input" type="search" placeholder="Buscar producto o código…" aria-label="Buscar" data-filter-q />
+        <input class="input" type="search" placeholder="Buscar producto…" aria-label="Buscar" data-filter-q />
       </label>
-      <Select value="" filter="tipo" label="Tipo" options={[{ value: "", label: "Bodegas y maletas" }, { value: "bodega", label: "Solo bodegas" }, { value: "monitor", label: "Solo maletas" }]} />
-      <Select value="" searchable filter="pais" label="País" options={[{ value: "", label: "Todos los países" }]} id="f-pais" />
-      <Select value="" searchable filter="ciudad" label="Ciudad" options={[{ value: "", label: "Todas las ciudades" }]} id="f-ciudad" />
-      <Select value="" searchable filter="ubicacion" label="Ubicación" options={[{ value: "", label: "Todas las ubicaciones" }]} id="f-ubicacion" />
     </div>
-    <div class="table-wrap">
+    <p class="muted small" data-pide>Elige un país o una bodega para ver el detalle.</p>
+    <div class="table-wrap" data-detalle hidden>
       <table class="table table-cards">
         <thead>
           <tr>
             <th data-sort="text" data-card-title>Producto</th>
-            <th data-sort="text">Ubicación</th>
-            <th data-sort="text">Ciudad</th>
+            <th data-sort="text">Bodega</th>
             <th class="num" data-sort="num">Cantidad</th>
-            <th class="num" data-sort="num">Costo prom.</th>
-            <th class="num" data-sort="num">Valor</th>
           </tr>
         </thead>
         <tbody data-body></tbody>
@@ -59,33 +47,6 @@ import FormError from "../components/ui/FormError.astro";
     </div>
   </section>
 
-  <section class="card card-list" data-table-prod data-panel="producto" hidden>
-    <div class="toolbar">
-      <label class="input-icon grow">
-        <i class="bi bi-search" aria-hidden="true"></i>
-        <input class="input" type="search" placeholder="Buscar producto o código…" aria-label="Buscar" data-filter-q />
-      </label>
-    </div>
-    <div class="table-wrap">
-      <table class="table table-cards">
-        <thead>
-          <tr>
-            <th data-sort="text" data-card-title>Producto</th>
-            <th class="num" data-sort="num">En bodegas</th>
-            <th class="num" data-sort="num">En maletas</th>
-            <th class="num" data-sort="num">Total</th>
-            <th class="num" data-sort="num">Mínimo</th>
-            <th class="num" data-sort="num">Valor</th>
-          </tr>
-        </thead>
-        <tbody data-body-prod></tbody>
-      </table>
-    </div>
-    <div class="empty" data-empty hidden>
-      <i class="bi bi-tags" aria-hidden="true"></i>
-      <p class="muted">Ningún producto coincide.</p>
-    </div>
-  </section>
   <!-- Conteo físico: se escribe lo que hay de verdad y las diferencias quedan como ajustes -->
   <Modal id="conteo-modal" title="Contar una bodega" description="Escribe lo que contaste. Lo que dejes vacío no cambia." size="lg">
     <div class="conteo">
@@ -112,6 +73,19 @@ import FormError from "../components/ui/FormError.astro";
 </AppLayout>
 
 <style>
+  .total {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    padding: var(--space-2) 0 var(--space-4);
+  }
+
+  .total-num {
+    font-weight: 800;
+    font-size: clamp(2.5rem, 6vw, 3.5rem);
+    line-height: 1.1;
+  }
+
   .conteo {
     display: flex;
     flex-direction: column;
@@ -129,70 +103,54 @@ import FormError from "../components/ui/FormError.astro";
 <script>
   import "../lib/ui";
   import { initTableFilter } from "../lib/ui/table-filter";
-  import { setKpi } from "../lib/ui/kpi";
-  import { bodegas, productos, stockFilas, bodega, producto, cantidadEn, guardarConteo } from "../lib/store";
-  import { money, num, esc, searchText, uniqueOptions, dsSelect, urlParam, intentar, parseNum, opcionesLugar } from "../lib/view";
+  import { bodegas, productos, stockFilas, bodega, producto, cantidadEn, guardarConteo, paisActual } from "../lib/store";
+  import { num, esc, searchText, uniqueOptions, dsSelect, urlParam, intentar, parseNum, opcionesLugar } from "../lib/view";
 
   const filas = stockFilas().map((f) => ({ ...f, b: bodega(f.bodega_id)!, p: producto(f.producto_id)! }));
   const scope = document.querySelector<HTMLElement>("[data-table]")!;
-
-  // Opciones de los filtros según los datos
   const bs = bodegas().filter((b) => b.activa);
-  dsSelect(scope, "#f-pais").setOptions([{ value: "", label: "Todos los países" }, ...uniqueOptions(bs.map((b) => b.pais))]);
-  dsSelect(scope, "#f-ciudad").setOptions([{ value: "", label: "Todas las ciudades" }, ...uniqueOptions(bs.map((b) => b.ciudad))]);
-  dsSelect(scope, "#f-ubicacion").setOptions([
-    { value: "", label: "Todas las ubicaciones" },
-    ...opcionesLugar(bs),
-  ]);
+  const fPais = dsSelect(scope, "#f-pais");
+  const fUbicacion = dsSelect(scope, "#f-ubicacion");
+
+  // Filtros: país (solo en global) y bodega (las del país elegido)
+  fPais.setOptions([{ value: "", label: "Todos los países" }, ...uniqueOptions(bs.map((b) => b.pais))]);
+  const opcionesBodega = (p = "") => fUbicacion.setOptions([{ value: "", label: "Todas las bodegas" }, ...opcionesLugar(bs.filter((b) => !p || b.pais === p), !p && !paisActual())]);
+  opcionesBodega();
 
   scope.querySelector("[data-body]")!.innerHTML = filas
     .sort((a, b) => (a.b.tipo === b.b.tipo ? a.b.nombre.localeCompare(b.b.nombre) || a.p.nombre.localeCompare(b.p.nombre) : a.b.tipo === "bodega" ? -1 : 1))
     .map(
-      (f) => `<tr data-row data-tipo="${f.b.tipo}" data-pais="${esc(f.b.pais)}" data-ciudad="${esc(f.b.ciudad)}" data-ubicacion="${f.b.id}"
-          data-producto="${f.p.id}" data-cantidad="${f.cantidad}" data-valor="${f.valor}" data-text="${esc(searchText(f.p.nombre, f.p.codigo))}">
+      (f) => `<tr data-row data-pais="${esc(f.b.pais)}" data-ubicacion="${f.b.id}" data-cantidad="${f.cantidad}" data-text="${esc(searchText(f.p.nombre, f.p.codigo))}">
         <td><span class="strong">${esc(f.p.nombre)}</span><p class="sub">${esc(f.p.codigo)}</p></td>
-        <td>${esc(f.b.nombre)}<p class="sub">${f.b.tipo === "monitor" ? "Maleta" : "Bodega"}</p></td>
-        <td>${esc(f.b.ciudad || "—")}<p class="sub">${esc(f.b.pais)}</p></td>
-        <td class="num tnum" data-sort-value="${f.cantidad}">${num(f.cantidad)}</td>
-        <td class="num tnum" data-sort-value="${f.costo}">${money(f.costo)}</td>
-        <td class="num tnum strong" data-sort-value="${f.valor}">${money(f.valor)}</td>
+        <td>${esc(f.b.nombre)}<p class="sub">${f.b.tipo === "monitor" ? "Maleta" : esc([f.b.ciudad, f.b.pais].filter(Boolean).join(" · "))}</p></td>
+        <td class="num tnum strong" data-sort-value="${f.cantidad}">${num(f.cantidad)}</td>
       </tr>`,
     )
     .join("");
 
-  const kpis = document.querySelector<HTMLElement>("[data-kpis]")!;
-  const table = initTableFilter(scope, ({ visible }) => {
-    const sum = (k: string) => visible.reduce((a, r) => a + Number(r.dataset[k]), 0);
-    setKpi(kpis, "valor", money(sum("valor")));
-    setKpi(kpis, "unidades", num(sum("cantidad")));
-    setKpi(kpis, "productos", new Set(visible.map((r) => r.dataset.producto)).size);
-    setKpi(kpis, "ubicaciones", new Set(visible.map((r) => r.dataset.ubicacion)).size);
+  // Arriba solo el total; el detalle sale al elegir país, bodega o buscar
+  const detalle = scope.querySelector<HTMLElement>("[data-detalle]")!;
+  const pide = scope.querySelector<HTMLElement>("[data-pide]")!;
+  const empty = scope.querySelector<HTMLElement>("[data-empty]")!;
+  const conPais = !!paisActual();
+  if (conPais) pide.textContent = "Elige una bodega para ver el detalle.";
+  const table = initTableFilter(scope, ({ visible, active, query, changed }) => {
+    if (changed === "pais") {
+      opcionesBodega(active.pais);
+      if (fUbicacion.value) table.set("ubicacion", "");
+    }
+    const unidades = visible.reduce((a, r) => a + Number(r.dataset.cantidad), 0);
+    scope.querySelector("[data-total]")!.textContent = num(unidades);
+    const lugares = new Set(visible.map((r) => r.dataset.ubicacion)).size;
+    scope.querySelector("[data-total-sub]")!.textContent = `${lugares === 1 ? "En 1 bodega" : `En ${num(lugares)} bodegas y maletas`}${paisActual() || active.pais ? ` · ${paisActual() || active.pais}` : ""}`;
+    const ver = !!(active.pais || active.ubicacion || query);
+    detalle.hidden = !ver || !visible.length;
+    pide.hidden = ver;
+    if (!ver) empty.hidden = true;
   });
   table.rescan();
   const desde = urlParam("ubicacion");
   if (desde) table.set("ubicacion", desde);
-
-  // Por producto: total en bodegas y en maletas
-  const prodScope = document.querySelector<HTMLElement>("[data-table-prod]")!;
-  prodScope.querySelector("[data-body-prod]")!.innerHTML = productos()
-    .filter((p) => p.activo)
-    .map((p) => {
-      const mias = filas.filter((f) => f.p.id === p.id);
-      const enB = mias.filter((f) => f.b.tipo === "bodega").reduce((a, f) => a + f.cantidad, 0);
-      const enM = mias.filter((f) => f.b.tipo === "monitor").reduce((a, f) => a + f.cantidad, 0);
-      const valor = mias.reduce((a, f) => a + f.valor, 0);
-      const bajo = enB < p.stock_minimo;
-      return `<tr data-row data-text="${esc(searchText(p.nombre, p.codigo))}">
-        <td><span class="strong">${esc(p.nombre)}</span><p class="sub">${esc(p.codigo)}</p></td>
-        <td class="num tnum" data-sort-value="${enB}">${bajo ? '<span class="dot warning" title="Bajo el mínimo"></span> ' : ""}${num(enB)}</td>
-        <td class="num tnum" data-sort-value="${enM}">${num(enM)}</td>
-        <td class="num tnum strong" data-sort-value="${enB + enM}">${num(enB + enM)}</td>
-        <td class="num tnum muted">${num(p.stock_minimo)}</td>
-        <td class="num tnum" data-sort-value="${valor}">${money(valor)}</td>
-      </tr>`;
-    })
-    .join("");
-  initTableFilter(prodScope).rescan();
 
   // ── Conteo físico ──
   const cm = document.getElementById("conteo-modal")!;

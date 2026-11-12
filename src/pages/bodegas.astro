@@ -67,7 +67,7 @@ import FormError from "../components/ui/FormError.astro";
 <script>
   import "../lib/ui";
   import { initTableFilter } from "../lib/ui/table-filter";
-  import { bodegas, bodega, paises, stockFilas, guardarBodega, setActivo } from "../lib/store";
+  import { bodegas, todasBodegas, bodega, paises, paisActual, stockFilas, guardarBodega, setActivo } from "../lib/store";
   import { money, num, esc, searchText, menu, intentar, dsSelect, uniqueOptions, flashRow, sinNuevo as texto } from "../lib/view";
 
   const scope = document.querySelector<HTMLElement>("[data-table]")!;
@@ -115,7 +115,7 @@ import FormError from "../components/ui/FormError.astro";
 
   // Catálogos: países y ciudades que ya existen (ciudades del país elegido primero)
   function opciones() {
-    const bs = bodegas();
+    const bs = todasBodegas();
     pais.setOptions(paises().map((x) => ({ value: x.nombre, label: x.nombre, hint: x.moneda })));
     const p = pais.value;
     ciudad.setOptions(uniqueOptions(bs.filter((b) => !p || b.pais === p).map((b) => b.ciudad)));
@@ -131,7 +131,7 @@ import FormError from "../components/ui/FormError.astro";
     const b = id ? bodega(id) : undefined;
     intentar(form, () => {});
     modal.querySelector("[data-modal-title]")!.textContent = b ? `Editar ${b.nombre}` : "Nueva bodega";
-    pais.value = b?.pais ?? "";
+    pais.value = b?.pais ?? paisActual();
     opciones();
     ciudad.value = b?.ciudad ?? "";
     nombre.value = b?.nombre ?? "";
