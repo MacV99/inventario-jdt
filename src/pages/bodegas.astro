@@ -26,8 +26,6 @@ import FormError from "../components/ui/FormError.astro";
           <tr>
             <th data-sort="text" data-card-title>Bodega</th>
             <th data-sort="text">Ciudad</th>
-            <th class="num" data-sort="num">Productos</th>
-            <th class="num" data-sort="num">Unidades</th>
             <th></th>
           </tr>
         </thead>
@@ -66,20 +64,17 @@ import FormError from "../components/ui/FormError.astro";
 <script>
   import "../lib/ui";
   import { initTableFilter } from "../lib/ui/table-filter";
-  import { bodegas, todasBodegas, bodega, paises, paisActual, stockFilas, guardarBodega, setActivo } from "../lib/store";
-  import { num, esc, searchText, menu, intentar, dsSelect, uniqueOptions, flashRow, sinNuevo as texto } from "../lib/view";
+  import { bodegas, todasBodegas, bodega, paises, paisActual, guardarBodega, setActivo } from "../lib/store";
+  import { esc, searchText, menu, intentar, dsSelect, uniqueOptions, flashRow, sinNuevo as texto } from "../lib/view";
 
   const scope = document.querySelector<HTMLElement>("[data-table]")!;
   const body = scope.querySelector<HTMLElement>("[data-body]")!;
   const table = initTableFilter(scope);
 
   function render() {
-    const filas = stockFilas();
     const bs = bodegas().filter((b) => b.tipo === "bodega");
     body.innerHTML = bs
       .map((b) => {
-        const s = filas.filter((f) => f.bodega_id === b.id);
-        const unidades = s.reduce((a, f) => a + f.cantidad, 0);
         const acciones = [
           { value: "ver", label: "Ver inventario", icon: "bi-box-seam" },
           { value: "editar", label: "Editar", icon: "bi-pencil" },
@@ -87,10 +82,8 @@ import FormError from "../components/ui/FormError.astro";
           b.activa ? { value: "desactivar", label: "Desactivar", icon: "bi-slash-circle", danger: true } : { value: "activar", label: "Activar", icon: "bi-check2-circle" },
         ];
         return `<tr data-row data-id="${b.id}" data-pais="${esc(b.pais)}" data-text="${esc(searchText(b.nombre, b.ciudad, b.pais))}">
-          <td><span class="strong">${esc(b.nombre)}</span>${b.activa ? "" : ' <span class="badge">Inactiva</span>'}</td>
+          <td><a href="/inventario?ubicacion=${b.id}" class="strong">${esc(b.nombre)}</a>${b.activa ? "" : ' <span class="badge">Inactiva</span>'}</td>
           <td>${esc(b.ciudad)}<p class="sub">${esc(b.pais)}</p></td>
-          <td class="num tnum">${s.length}</td>
-          <td class="num tnum strong" data-sort-value="${unidades}">${num(unidades)}</td>
           <td class="cell-actions">${menu(acciones)}</td>
         </tr>`;
       })
