@@ -102,7 +102,7 @@ const tipos = Object.entries(TIPO_MOV).map(([value, t]) => ({ value, label: t.la
       <div class="item-row" data-item>
         <ds-select name="producto" searchable placeholder="Elegir producto" aria-label="Producto"></ds-select>
         <input class="input tnum" type="text" inputmode="numeric" name="cantidad" placeholder="Cantidad" aria-label="Cantidad" />
-        <input class="input tnum" type="text" inputmode="decimal" name="valor" placeholder="0" aria-label="Valor unitario" data-valor data-money />
+        <input class="input tnum" type="text" inputmode="decimal" name="valor" placeholder="Precio c/u" aria-label="Precio unitario" data-valor data-money />
         <span class="num tnum muted" data-subtotal>—</span>
         <button type="button" class="btn btn-subtle btn-icon btn-sm" data-remove-item aria-label="Quitar"><i class="bi bi-x-lg" aria-hidden="true"></i></button>
       </div>
@@ -142,9 +142,18 @@ const tipos = Object.entries(TIPO_MOV).map(([value, t]) => ({ value, label: t.la
 
   .items :global(.item-row) {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) 80px 120px 110px var(--control-h-sm);
+    grid-template-columns: minmax(0, 1fr) 100px 120px 110px var(--control-h-sm);
     align-items: center;
     gap: var(--space-2);
+  }
+
+  /* Sin precio (todo menos venta): solo producto y cantidad */
+  .items.sin-valor :global(.item-row) {
+    grid-template-columns: minmax(0, 1fr) 120px var(--control-h-sm);
+  }
+
+  .items.sin-valor :global(:is([data-valor], [data-subtotal], [data-valor-label], [data-sub-label])) {
+    display: none;
   }
 
   .items-foot {
@@ -183,6 +192,10 @@ const tipos = Object.entries(TIPO_MOV).map(([value, t]) => ({ value, label: t.la
   @media (max-width: 599.98px) {
     .items :global(.item-row) {
       grid-template-columns: 1fr 1fr var(--control-h-sm);
+    }
+
+    .items.sin-valor :global(.item-row) {
+      grid-template-columns: 1fr var(--control-h-sm);
     }
 
     .items :global(.item-row > ds-select) {
@@ -310,15 +323,11 @@ const tipos = Object.entries(TIPO_MOV).map(([value, t]) => ({ value, label: t.la
     keep(metodo, metodosDe(lugarVenta()?.pais).map((m) => ({ value: String(m.id), label: m.nombre })));
     valorLabel.textContent = t() === "venta" ? (cur() === MONEDA ? "Precio unit." : `Precio (${cur()})`) : "";
     form.querySelector<HTMLElement>("[data-total-wrap]")!.hidden = !conValor();
-    form.querySelector<HTMLElement>("[data-sub-label]")!.style.visibility = conValor() ? "" : "hidden";
-    rows().forEach((row) => (row.querySelector<HTMLElement>("[data-subtotal]")!.style.visibility = conValor() ? "" : "hidden"));
+    items.classList.toggle("sin-valor", !conValor());
     const opts = productOptions();
     rows().forEach((row) => {
       const p = row.querySelector<DsSelectEl>("ds-select")!;
       p.setOptions(opts);
-      const v = row.querySelector<HTMLInputElement>("[data-valor]")!;
-      v.style.visibility = conValor() ? "" : "hidden";
-      v.placeholder = "Precio c/u";
     });
     recalc();
   }
@@ -328,10 +337,6 @@ const tipos = Object.entries(TIPO_MOV).map(([value, t]) => ({ value, label: t.la
     const row = rows().at(-1)!;
     const p = row.querySelector<DsSelectEl>("ds-select")!;
     p.setOptions(productOptions());
-    const valor = row.querySelector<HTMLInputElement>("[data-valor]")!;
-    valor.style.visibility = conValor() ? "" : "hidden";
-    valor.placeholder = "Precio c/u";
-    row.querySelector<HTMLElement>("[data-subtotal]")!.style.visibility = conValor() ? "" : "hidden";
     // Venta: el precio del producto en el país de donde sale
     p.addEventListener("change", () => {
       const v = row.querySelector<HTMLInputElement>("[name=valor]")!;

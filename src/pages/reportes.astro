@@ -84,6 +84,18 @@ const grupos = [
     flex-wrap: wrap;
     gap: var(--space-2);
   }
+
+  /* Celular: las opciones se deslizan de lado en vez de salirse de la pantalla */
+  .group-row .segmented {
+    max-width: 100%;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+
+  .group-row .segmented button {
+    flex-shrink: 0;
+    white-space: nowrap;
+  }
 </style>
 
 <script>

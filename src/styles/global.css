@@ -1711,6 +1711,11 @@ ds-menu .popover {
   backdrop-filter: blur(2px);
 }
 
+/* Con una ventana abierta, la página de atrás no se mueve */
+html:has(.modal[open]) {
+  overflow: hidden;
+}
+
 .modal-header {
   display: flex;
   align-items: flex-start;

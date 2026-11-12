@@ -119,6 +119,10 @@ import Select from "../components/ui/Select.astro";
     const { value } = (e as CustomEvent<{ value: string }>).detail;
     if (value === "editar") return open(id);
     const activo = value === "activar";
+    if (!activo) {
+      const ok = await window.ui.confirm({ tone: "warning", title: `¿Desactivar ${metodoPago(id)?.nombre ?? "este método"}?`, message: "Deja de salir al vender. Las ventas viejas lo conservan. Se puede activar de nuevo.", confirmText: "Desactivar" });
+      if (!ok) return;
+    }
     if (await intentar(null, () => guardarMetodoPago({ id, activo }), activo ? "Método activado" : "Método desactivado: ya no sale al vender")) {
       render();
       flashRow(body.querySelector(`tr[data-id="${id}"]`));

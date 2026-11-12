@@ -18,7 +18,7 @@ import StatCard from "../components/ui/StatCard.astro";
       <span class="muted small">Elige un país en el menú para ver todo</span>
     </div>
     <div class="table-wrap">
-      <table class="table">
+      <table class="table tabla-paises">
         <thead>
           <tr><th>País</th><th class="num">Productos</th><th class="num">Bodegas</th><th class="num">Vendido este mes</th></tr>
         </thead>
@@ -81,12 +81,13 @@ import StatCard from "../components/ui/StatCard.astro";
 <style>
   .grid-2 {
     display: grid;
+    grid-template-columns: minmax(0, 1fr);
     gap: var(--page-gap);
   }
 
   @media (min-width: 1100px) {
     .grid-2 {
-      grid-template-columns: 1fr 1fr;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
       align-items: start;
     }
   }
@@ -98,13 +99,24 @@ import StatCard from "../components/ui/StatCard.astro";
     gap: var(--space-2);
   }
 
+  /* Celular: sin la columna de bodegas para que se vea lo vendido */
+  @media (max-width: 599.98px) {
+    .tabla-paises :global(:is(th, td):nth-child(3)) {
+      display: none;
+    }
+
+    .tabla-paises th {
+      white-space: normal;
+    }
+  }
+
   [data-paises] :global(.fila-total td) {
     border-top: 1px solid var(--clr-border-strong, var(--clr-border));
     font-weight: 700;
   }
 
   .hbars :global(.hbar) {
-    grid-template-columns: minmax(110px, 170px) 1fr minmax(80px, auto);
+    grid-template-columns: minmax(0, 170px) minmax(40px, 1fr) auto;
     color: inherit;
     border-radius: var(--radius-sm);
   }

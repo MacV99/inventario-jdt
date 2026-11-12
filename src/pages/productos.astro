@@ -241,6 +241,10 @@ import FormError from "../components/ui/FormError.astro";
     if (value === "editar") open(id);
     if (value === "historial") verHistorial(id);
     if (value === "desactivar" || value === "activar") {
+      if (value === "desactivar") {
+        const ok = await window.ui.confirm({ tone: "warning", title: `¿Desactivar ${producto(id)!.nombre}?`, message: "Deja de salir para elegir en los movimientos. Se puede activar de nuevo.", confirmText: "Desactivar" });
+        if (!ok) return;
+      }
       await intentar(null, () => setActivo("producto", id, value === "activar"), value === "activar" ? "Producto activado" : "Producto desactivado: ya no sale para elegir");
       render();
     }
