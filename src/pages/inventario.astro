@@ -1,6 +1,6 @@
 ---
-// Inventario (admin): arriba solo cuántos productos hay en total; al elegir país o bodega sale el detalle.
-// Sin precios por ahora. Se abre filtrado con ?ubicacion=<id> (desde Resumen o Bodegas).
+// Inventario (admin): cuántos productos hay y cuántos de cada uno, de lo que se esté mirando:
+// todo JDT (global), el país elegido en el menú, o el país/bodega de los filtros. Sin precios por ahora. Se abre filtrado con ?ubicacion=<id> (desde Resumen o Bodegas).
 import AppLayout from "../layouts/AppLayout.astro";
 import PageHeader from "../components/ui/PageHeader.astro";
 import Select from "../components/ui/Select.astro";
@@ -9,7 +9,7 @@ import FormError from "../components/ui/FormError.astro";
 ---
 
 <AppLayout title="Inventario">
-  <PageHeader title="Inventario" subtitle="Cuántos productos hay">
+  <PageHeader title="Inventario" subtitle=" ">
     <button slot="actions" type="button" class="btn btn-ghost" data-conteo><i class="bi bi-clipboard-check" aria-hidden="true"></i>Contar una bodega</button>
     <a slot="actions" href="/movimientos?nuevo" class="btn btn-primary"><i class="bi bi-plus-lg" aria-hidden="true"></i>Nuevo movimiento</a>
   </PageHeader>
@@ -21,20 +21,18 @@ import FormError from "../components/ui/FormError.astro";
       <p class="muted small" data-total-sub></p>
     </div>
     <div class="toolbar">
-      <Select value="" searchable filter="pais" label="País" options={[{ value: "", label: "Todos los países" }]} id="f-pais" />
-      <Select value="" searchable filter="ubicacion" label="Bodega" options={[{ value: "", label: "Todas las bodegas" }]} id="f-ubicacion" />
+      <Select value="" searchable label="País" options={[{ value: "", label: "Todos los países" }]} id="f-pais" />
+      <Select value="" searchable label="Bodega" options={[{ value: "", label: "Todas las bodegas" }]} id="f-ubicacion" />
       <label class="input-icon grow">
         <i class="bi bi-search" aria-hidden="true"></i>
         <input class="input" type="search" placeholder="Buscar producto…" aria-label="Buscar" data-filter-q />
       </label>
     </div>
-    <p class="muted small" data-pide>Elige un país o una bodega para ver el detalle.</p>
-    <div class="table-wrap" data-detalle hidden>
+    <div class="table-wrap">
       <table class="table table-cards">
         <thead>
           <tr>
             <th data-sort="text" data-card-title>Producto</th>
-            <th data-sort="text">Bodega</th>
             <th class="num" data-sort="num">Cantidad</th>
           </tr>
         </thead>
@@ -117,40 +115,48 @@ import FormError from "../components/ui/FormError.astro";
   const opcionesBodega = (p = "") => fUbicacion.setOptions([{ value: "", label: "Todas las bodegas" }, ...opcionesLugar(bs.filter((b) => !p || b.pais === p), !p && !paisActual())]);
   opcionesBodega();
 
-  scope.querySelector("[data-body]")!.innerHTML = filas
-    .sort((a, b) => (a.b.tipo === b.b.tipo ? a.b.nombre.localeCompare(b.b.nombre) || a.p.nombre.localeCompare(b.p.nombre) : a.b.tipo === "bodega" ? -1 : 1))
-    .map(
-      (f) => `<tr data-row data-pais="${esc(f.b.pais)}" data-ubicacion="${f.b.id}" data-cantidad="${f.cantidad}" data-text="${esc(searchText(f.p.nombre, f.p.codigo))}">
-        <td><span class="strong">${esc(f.p.nombre)}</span><p class="sub">${esc(f.p.codigo)}</p></td>
-        <td>${esc(f.b.nombre)}<p class="sub">${f.b.tipo === "monitor" ? "Maleta" : esc([f.b.ciudad, f.b.pais].filter(Boolean).join(" · "))}</p></td>
-        <td class="num tnum strong" data-sort-value="${f.cantidad}">${num(f.cantidad)}</td>
-      </tr>`,
-    )
-    .join("");
+  if (paisActual()) fPais.hidden = true;
 
-  // Arriba solo el total; el detalle sale al elegir país, bodega o buscar
-  const detalle = scope.querySelector<HTMLElement>("[data-detalle]")!;
-  const pide = scope.querySelector<HTMLElement>("[data-pide]")!;
-  const empty = scope.querySelector<HTMLElement>("[data-empty]")!;
-  const conPais = !!paisActual();
-  if (conPais) pide.textContent = "Elige una bodega para ver el detalle.";
-  const table = initTableFilter(scope, ({ visible, active, query, changed }) => {
-    if (changed === "pais") {
-      opcionesBodega(active.pais);
-      if (fUbicacion.value) table.set("ubicacion", "");
-    }
-    const unidades = visible.reduce((a, r) => a + Number(r.dataset.cantidad), 0);
-    scope.querySelector("[data-total]")!.textContent = num(unidades);
-    const lugares = new Set(visible.map((r) => r.dataset.ubicacion)).size;
-    scope.querySelector("[data-total-sub]")!.textContent = `${lugares === 1 ? "En 1 bodega" : `En ${num(lugares)} bodegas y maletas`}${paisActual() || active.pais ? ` · ${paisActual() || active.pais}` : ""}`;
-    const ver = !!(active.pais || active.ubicacion || query);
-    detalle.hidden = !ver || !visible.length;
-    pide.hidden = ver;
-    if (!ver) empty.hidden = true;
+  // Lo que se está mirando: todo JDT, un país o una bodega
+  const tbody = scope.querySelector<HTMLElement>("[data-body]")!;
+  const sub = scope.querySelector<HTMLElement>("[data-total-sub]")!;
+  const subtitulo = document.querySelector<HTMLElement>("[data-page-subtitle]")!;
+  function pintar() {
+    const p = paisActual() || fPais.value;
+    const b = fUbicacion.value;
+    const mias = filas.filter((f) => (b ? f.b.id === b : !p || f.b.pais === p));
+    const porProducto = new Map<string, number>();
+    for (const f of mias) porProducto.set(f.p.id, (porProducto.get(f.p.id) ?? 0) + f.cantidad);
+    tbody.innerHTML = productos()
+      .filter((x) => porProducto.has(x.id))
+      .map((x) => {
+        const n = porProducto.get(x.id)!;
+        return `<tr data-row data-cantidad="${n}" data-text="${esc(searchText(x.nombre, x.codigo))}">
+          <td><span class="strong">${esc(x.nombre)}</span><p class="sub">${esc(x.codigo)}</p></td>
+          <td class="num tnum strong" data-sort-value="${n}">${num(n)}</td>
+        </tr>`;
+      })
+      .join("");
+    const lugares = new Set(mias.map((f) => f.b.id)).size;
+    const donde = b ? bodega(b)!.nombre : p || "Todo JDT";
+    subtitulo.textContent = donde;
+    sub.textContent = b ? donde : `${donde} · ${lugares === 1 ? "1 bodega" : `${num(lugares)} bodegas y maletas`}`;
+    table.rescan();
+  }
+  const table = initTableFilter(scope, ({ visible }) => {
+    scope.querySelector("[data-total]")!.textContent = num(visible.reduce((a, r) => a + Number(r.dataset.cantidad), 0));
   });
-  table.rescan();
-  const desde = urlParam("ubicacion");
-  if (desde) table.set("ubicacion", desde);
+  fPais.addEventListener("change", (e) => {
+    if (!(e as CustomEvent).detail) return;
+    opcionesBodega(fPais.value);
+    fUbicacion.value = "";
+    pintar();
+  });
+  fUbicacion.addEventListener("change", (e) => {
+    if ((e as CustomEvent).detail) pintar();
+  });
+  fUbicacion.value = urlParam("ubicacion");
+  pintar();
 
   // ── Conteo físico ──
   const cm = document.getElementById("conteo-modal")!;
