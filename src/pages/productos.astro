@@ -1,5 +1,5 @@
 ---
-// Productos (admin): crear, editar, desactivar y ver el costo promedio (se actualiza solo con cada compra).
+// Productos (admin): crear, editar, desactivar y el precio de venta en cada país.
 import AppLayout from "../layouts/AppLayout.astro";
 import PageHeader from "../components/ui/PageHeader.astro";
 import Select from "../components/ui/Select.astro";
@@ -25,8 +25,7 @@ import FormError from "../components/ui/FormError.astro";
         <thead>
           <tr>
             <th data-sort="text" data-card-title>Producto</th>
-            <th class="num" data-sort="num" title="Se actualiza solo con cada compra">Costo promedio</th>
-            <th title="Precio en cada país y cuánto se gana sobre el costo">Precio de venta</th>
+            <th title="Precio en cada país, en su moneda">Precio de venta</th>
             <th class="num" data-sort="num">En existencia</th>
             <th class="num" data-sort="num">Mínimo</th>
             <th></th>
@@ -41,7 +40,7 @@ import FormError from "../components/ui/FormError.astro";
     </div>
   </section>
 
-  <Modal id="prod-modal" title="Nuevo producto" description="El costo no se escribe: se calcula solo con las compras.">
+  <Modal id="prod-modal" title="Nuevo producto">
     <form class="form-grid" data-form novalidate>
       <div class="span-2"><FormError /></div>
       <div class="field span-2">
@@ -86,7 +85,6 @@ import FormError from "../components/ui/FormError.astro";
             <th class="num">Entra</th>
             <th class="num">Sale</th>
             <th class="num">Saldo</th>
-            <th class="num" data-k-costo>Costo prom.</th>
           </tr>
         </thead>
         <tbody data-k-body></tbody>
@@ -143,7 +141,7 @@ import FormError from "../components/ui/FormError.astro";
 <script>
   import "../lib/ui";
   import { initTableFilter } from "../lib/ui/table-filter";
-  import { productos, producto, stockFilas, costoPromedio, guardarProducto, setActivo, kardex, bodegas, rutaMov, paises, TIPO_MOV } from "../lib/store";
+  import { productos, producto, stockFilas, guardarProducto, setActivo, kardex, bodegas, rutaMov, paises, TIPO_MOV } from "../lib/store";
   import { money, num, day, esc, searchText, menu, intentar, parseNum, dsSelect, flashRow, opcionesLugar } from "../lib/view";
 
   const scope = document.querySelector<HTMLElement>("[data-table]")!;
@@ -152,20 +150,17 @@ import FormError from "../components/ui/FormError.astro";
   table.set("estado", "activo");
 
   function render() {
-    const costos = costoPromedio();
     const filas = stockFilas();
     const ps = productos();
     body.innerHTML = ps
       .map((p) => {
-        const costo = costos.get(p.id) ?? 0;
         const total = filas.filter((f) => f.producto_id === p.id).reduce((a, f) => a + f.cantidad, 0);
-        // Precio en cada país (en su moneda) y cuánto se gana sobre el costo, pasado a pesos con la tasa del país
+        // Precio en cada país (en su moneda)
         const precios = paises()
           .filter((x) => p.precios[x.nombre])
           .map((x) => {
             const v = p.precios[x.nombre]!;
-            const margen = costo ? Math.round(((v * x.tasa - costo) / (v * x.tasa)) * 100) : null;
-            return `<span class="precio-linea"><span class="muted">${esc(x.nombre)}</span> <span class="tnum">${money(v, x.moneda)}</span>${margen === null ? "" : ` <span class="muted small" title="Margen">${margen}%</span>`}</span>`;
+            return `<span class="precio-linea"><span class="muted">${esc(x.nombre)}</span> <span class="tnum">${money(v, x.moneda)}</span></span>`;
           });
         const acciones = [
           { value: "editar", label: "Editar", icon: "bi-pencil" },
@@ -175,7 +170,6 @@ import FormError from "../components/ui/FormError.astro";
         ];
         return `<tr data-row data-id="${p.id}" data-estado="${p.activo ? "activo" : "inactivo"}" data-text="${esc(searchText(p.nombre, p.codigo))}">
           <td><span class="strong">${esc(p.nombre)}</span>${p.activo ? "" : ' <span class="badge">Inactivo</span>'}<p class="sub">${esc(p.codigo || "Sin código")} · ${esc(p.unidad)}</p></td>
-          <td class="num tnum" data-sort-value="${costo}">${costo ? money(costo) : '<span class="muted">Sin compras</span>'}</td>
           <td>${precios.join("") || '<span class="muted">Sin precio</span>'}</td>
           <td class="num tnum" data-sort-value="${total}">${num(total)}</td>
           <td class="num tnum muted" data-sort-value="${p.stock_minimo}">${num(p.stock_minimo)}</td>
@@ -255,8 +249,6 @@ import FormError from "../components/ui/FormError.astro";
   let kProd = "";
   function pintarHistorial() {
     const filas = kardex(kProd, kUbic.value);
-    const enEmpresa = !kUbic.value;
-    km.querySelector<HTMLElement>("[data-k-costo]")!.hidden = !enEmpresa;
     km.querySelector("[data-k-body]")!.innerHTML = filas
       .map(
         (f) => `<tr>
@@ -266,7 +258,6 @@ import FormError from "../components/ui/FormError.astro";
           <td class="num tnum">${f.entra ? `+${num(f.entra)}` : f.mueve ? `<span class="muted" title="Se movió dentro de la empresa">${num(f.mueve)}</span>` : ""}</td>
           <td class="num tnum">${f.sale ? `−${num(f.sale)}` : ""}</td>
           <td class="num tnum strong">${num(f.saldo)}</td>
-          ${enEmpresa ? `<td class="num tnum">${money(f.costo)}</td>` : ""}
         </tr>`,
       )
       .join("");

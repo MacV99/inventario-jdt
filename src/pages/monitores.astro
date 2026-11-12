@@ -13,7 +13,7 @@ import FormError from "../components/ui/FormError.astro";
 
   <section class="card kpis" data-kpis>
     <StatCard label="Monitores" value="—" dataKey="monitores" />
-    <StatCard label="Valor en maletas" value="—" dataKey="valor" hint="Al costo promedio" />
+    <StatCard label="En maletas" value="—" dataKey="unidades" hint="Productos que tienen los monitores" />
     <StatCard label="Vendido" value="—" dataKey="vendido" hint="Todo en pesos" />
     <StatCard label="Por recibir" value="—" dataKey="debe" hint="Todo en pesos" />
   </section>
@@ -31,7 +31,6 @@ import FormError from "../components/ui/FormError.astro";
           <tr>
             <th data-sort="text" data-card-title>Monitor</th>
             <th class="num" data-sort="num">En maleta</th>
-            <th class="num" data-sort="num">Valor maleta</th>
             <th class="num" data-sort="num">Vendido</th>
             <th class="num" data-sort="num">Entregó</th>
             <th class="num" data-sort="num">Debe</th>
@@ -55,7 +54,7 @@ import FormError from "../components/ui/FormError.astro";
     </div>
     <div class="table-wrap" data-panel="tiene">
       <table class="table">
-        <thead><tr><th>Producto</th><th class="num">Cantidad</th><th class="num">Precio</th><th class="num">Valor al costo</th></tr></thead>
+        <thead><tr><th>Producto</th><th class="num">Cantidad</th><th class="num">Precio</th></tr></thead>
         <tbody data-m-tiene></tbody>
       </table>
     </div>
@@ -117,7 +116,6 @@ import FormError from "../components/ui/FormError.astro";
         return `<tr data-row data-id="${f.bodega.id}" data-text="${esc(searchText(n, f.bodega.ciudad, f.bodega.pais))}">
           <td><span class="who">${avatar(n)}<span><span class="strong">${esc(n)}</span><p class="sub">${esc([f.bodega.ciudad, f.bodega.pais].filter(Boolean).join(" · ") || "Sin ciudad")}</p></span></span></td>
           <td class="num tnum" data-sort-value="${f.unidades}">${num(f.unidades)} und</td>
-          <td class="num tnum" data-sort-value="${f.valor}">${money(f.valor)}</td>
           <td class="num tnum" data-sort-value="${f.vendidoBase}">${money(f.vendido, f.moneda)}<p class="sub">${num(f.vendidas)} und</p></td>
           <td class="num tnum" data-sort-value="${f.entregado}">${money(f.entregado, f.moneda)}</td>
           <td class="num tnum strong nowrap" data-sort-value="${f.debeBase}">${f.debe > 0 ? '<span class="dot warning" title="Tiene dinero por entregar"></span> ' : ""}${money(f.debe, f.moneda)}</td>
@@ -131,9 +129,9 @@ import FormError from "../components/ui/FormError.astro";
       })
       .join("");
     // Los totales de arriba van en pesos (cada monitor pasado con la tasa de su país)
-    const sum = (k: "valor" | "vendidoBase" | "debeBase") => filas.reduce((a, f) => a + f[k], 0);
+    const sum = (k: "unidades" | "vendidoBase" | "debeBase") => filas.reduce((a, f) => a + f[k], 0);
     setKpi(kpis, "monitores", filas.length);
-    setKpi(kpis, "valor", money(sum("valor")));
+    setKpi(kpis, "unidades", num(sum("unidades")));
     setKpi(kpis, "vendido", money(sum("vendidoBase")));
     setKpi(kpis, "debe", money(filas.reduce((a, f) => a + Math.max(0, f.debeBase), 0)));
     table.rescan();
@@ -150,8 +148,8 @@ import FormError from "../components/ui/FormError.astro";
     m.querySelector("[data-m-tiene]")!.innerHTML = esto(
       stockFilas()
         .filter((f) => f.bodega_id === id)
-        .map((f) => `<tr><td class="strong">${esc(producto(f.producto_id)?.nombre)}</td><td class="num tnum">${num(f.cantidad)}</td><td class="num tnum">${precioEn(f.producto_id, b.pais) ? money(precioEn(f.producto_id, b.pais), moneda) : "—"}</td><td class="num tnum">${money(f.valor)}</td></tr>`),
-      4,
+        .map((f) => `<tr><td class="strong">${esc(producto(f.producto_id)?.nombre)}</td><td class="num tnum">${num(f.cantidad)}</td><td class="num tnum">${precioEn(f.producto_id, b.pais) ? money(precioEn(f.producto_id, b.pais), moneda) : "—"}</td></tr>`),
+      3,
       "La maleta está vacía.",
     );
     m.querySelector("[data-m-ventas]")!.innerHTML = esto(

@@ -1,5 +1,5 @@
 ---
-// Resumen (admin): del país elegido, cifras del mes, valor por bodega, por agotarse y últimos movimientos.
+// Resumen (admin): del país elegido, cifras del mes, productos por bodega, por agotarse y últimos movimientos.
 // En global (sin país): solo una fila corta por país.
 import AppLayout from "../layouts/AppLayout.astro";
 import PageHeader from "../components/ui/PageHeader.astro";
@@ -28,16 +28,15 @@ import StatCard from "../components/ui/StatCard.astro";
   </section>
 
   <section class="card kpis" data-kpis data-local>
-    <StatCard label="Valor del inventario" value="—" dataKey="valor" hint="Todo lo que hay en bodegas y maletas, al costo promedio" />
+    <StatCard label="Productos" value="—" dataKey="unidades" hint="Todo lo que hay en bodegas y maletas" />
     <StatCard label="Vendido este mes" value="—" dataKey="vendido" />
-    <StatCard label="Ganancia este mes" value="—" dataKey="ganancia" hint="Precio cobrado menos costo" />
     <StatCard label="Por recibir" value="—" dataKey="debe" hint="Dinero de ventas que los monitores no han entregado" />
   </section>
 
   <div class="grid-2" data-local>
     <section class="card card-list">
       <div class="card-title">
-        <h2 class="caps">Valor por bodega</h2>
+        <h2 class="caps">Productos por bodega</h2>
         <a href="/inventario" class="small">Ver inventario</a>
       </div>
       <div class="hbars" data-bars></div>
@@ -123,7 +122,7 @@ import StatCard from "../components/ui/StatCard.astro";
 
 <script>
   import { setKpi } from "../lib/ui/kpi";
-  import { bodegas, productos, stockFilas, ventas, totalMov, gananciaMov, cuadre, movimientos, unidadesMov, rutaMov, paises, paisActual, elegirPais, TIPO_MOV } from "../lib/store";
+  import { bodegas, productos, stockFilas, ventas, totalMov, cuadre, movimientos, unidadesMov, rutaMov, paises, paisActual, elegirPais, TIPO_MOV } from "../lib/store";
   import { money, num, day, esc, monthLabel, today } from "../lib/view";
 
   const mes = today().slice(0, 7);
@@ -167,20 +166,17 @@ import StatCard from "../components/ui/StatCard.astro";
 
   const filas = stockFilas();
   const kpis = document.querySelector<HTMLElement>("[data-kpis]")!;
-  const valor = filas.reduce((a, f) => a + f.valor, 0);
   const delMes = ventas().filter((v) => v.fecha.startsWith(mes));
   const vendido = delMes.reduce((a, v) => a + totalMov(v), 0);
-  const ganancia = delMes.reduce((a, v) => a + gananciaMov(v), 0);
   const debe = cuadre().reduce((a, c) => a + Math.max(0, c.debeBase), 0);
-  setKpi(kpis, "valor", money(valor), `${num(filas.reduce((a, f) => a + f.cantidad, 0))} und`);
+  setKpi(kpis, "unidades", num(filas.reduce((a, f) => a + f.cantidad, 0)));
   setKpi(kpis, "vendido", money(vendido), `${delMes.length} ${delMes.length === 1 ? "venta" : "ventas"}`);
-  setKpi(kpis, "ganancia", money(ganancia), vendido ? `${Math.round((ganancia / vendido) * 100)}%` : "", ganancia > 0 ? "up" : "flat");
   setKpi(kpis, "debe", money(debe), "de monitores");
 
-  // Valor por bodega (bodegas primero, luego maletas)
+  // Productos por bodega (bodegas primero, luego maletas)
   const porBodega = bodegas()
     .filter((b) => b.activa)
-    .map((b) => ({ b, valor: filas.filter((f) => f.bodega_id === b.id).reduce((a, f) => a + f.valor, 0) }))
+    .map((b) => ({ b, valor: filas.filter((f) => f.bodega_id === b.id).reduce((a, f) => a + f.cantidad, 0) }))
     .sort((a, b) => (a.b.tipo === b.b.tipo ? b.valor - a.valor : a.b.tipo === "bodega" ? -1 : 1));
   const max = Math.max(1, ...porBodega.map((x) => x.valor));
   document.querySelector("[data-bars]")!.innerHTML = porBodega
@@ -188,7 +184,7 @@ import StatCard from "../components/ui/StatCard.astro";
       (x) => `<a class="hbar" href="/inventario?ubicacion=${x.b.id}">
         <span>${esc(x.b.nombre)}<span class="sub">${x.b.tipo === "monitor" ? "Maleta" : `${esc(x.b.ciudad)} · ${esc(x.b.pais)}`}</span></span>
         <span class="hbar-track"><span style="width:${(x.valor / max) * 100}%"></span></span>
-        <span class="tnum">${money(x.valor)}</span>
+        <span class="tnum">${num(x.valor)}</span>
       </a>`,
     )
     .join("");
@@ -225,7 +221,7 @@ import StatCard from "../components/ui/StatCard.astro";
         <td class="nowrap"><i class="bi ${t.icon} muted" aria-hidden="true"></i> ${t.label}${m.anulado ? ' <span class="badge danger">Anulado</span>' : ""}</td>
         <td>${esc(de)} <span class="muted">→</span> ${esc(a)}</td>
         <td class="num tnum">${num(unidadesMov(m))}</td>
-        <td class="num tnum">${money(totalMov(m))}</td>
+        <td class="num tnum">${m.tipo === "venta" ? money(totalMov(m)) : '<span class="muted">—</span>'}</td>
       </tr>`;
     })
     .join("");

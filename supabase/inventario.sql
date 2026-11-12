@@ -313,15 +313,15 @@ begin
     v_cant  := nullif(v_it->>'cantidad', '')::numeric;
     v_valor := coalesce(nullif(v_it->>'valor_unitario', '')::numeric, 0);
     if v_cant is null or v_cant <= 0 then raise exception 'Cantidad no válida.'; end if;
-    if v_tipo in ('compra','venta') and v_valor <= 0 then
-      raise exception '%', case when v_tipo = 'compra' then 'Escribe el costo de cada producto.' else 'Escribe el precio de cada producto.' end;
-    end if;
+    -- Las compras ya no llevan costo (2026-11-11): solo la venta pide precio
+    if v_tipo = 'venta' and v_valor <= 0 then raise exception 'Escribe el precio de cada producto.'; end if;
+    if v_valor < 0 then raise exception 'Valor no válido.'; end if;
 
     -- bloquea el costo del producto mientras se calcula (dos compras a la vez no se pisan)
     select costo_promedio into v_avg from inventario.producto_costos where producto_id = v_prod for update;
     if not found then raise exception 'Ese producto no existe.'; end if;
 
-    if v_tipo = 'compra' then
+    if v_tipo = 'compra' and v_valor > 0 then
       v_costo := v_valor * v_tasa;
       select coalesce(sum(cantidad), 0) into v_total from inventario.stock where producto_id = v_prod;
       update inventario.producto_costos
@@ -438,7 +438,7 @@ begin
 
   for v_it in select * from inventario.movimiento_items where movimiento_id = p_id order by id loop
     -- compra: deshace su efecto en el costo promedio
-    if v_mov.tipo = 'compra' then
+    if v_mov.tipo = 'compra' and v_it.valor_unitario > 0 then
       select costo_promedio into v_avg from inventario.producto_costos where producto_id = v_it.producto_id for update;
       select coalesce(sum(cantidad), 0) into v_tot from inventario.stock where producto_id = v_it.producto_id;
       if v_tot - v_it.cantidad > 0 then

@@ -276,7 +276,7 @@ import PasswordInput from "../components/ui/PasswordInput.astro";
     let hecho = false;
     if (value === "monitor") hecho = await intentar(null, () => cambiarUsuario({ id, rol: "monitor" }), `${p.nombre} ahora es monitor`);
     if (value === "admin") {
-      const ok = await window.ui.confirm({ tone: "warning", title: `¿Dar acceso de admin a ${p.nombre}?`, message: "Podrá ver costos y ganancias y manejar todo el inventario.", confirmText: "Hacer admin" });
+      const ok = await window.ui.confirm({ tone: "warning", title: `¿Dar acceso de admin a ${p.nombre}?`, message: "Podrá manejar todo el inventario.", confirmText: "Hacer admin" });
       if (ok) hecho = await intentar(null, () => cambiarUsuario({ id, rol: "admin" }), `${p.nombre} ahora es admin`);
     }
     if (value === "desactivar") {

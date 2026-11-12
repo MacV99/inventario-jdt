@@ -28,7 +28,6 @@ import FormError from "../components/ui/FormError.astro";
             <th data-sort="text">Ciudad</th>
             <th class="num" data-sort="num">Productos</th>
             <th class="num" data-sort="num">Unidades</th>
-            <th class="num" data-sort="num">Valor</th>
             <th></th>
           </tr>
         </thead>
@@ -68,7 +67,7 @@ import FormError from "../components/ui/FormError.astro";
   import "../lib/ui";
   import { initTableFilter } from "../lib/ui/table-filter";
   import { bodegas, todasBodegas, bodega, paises, paisActual, stockFilas, guardarBodega, setActivo } from "../lib/store";
-  import { money, num, esc, searchText, menu, intentar, dsSelect, uniqueOptions, flashRow, sinNuevo as texto } from "../lib/view";
+  import { num, esc, searchText, menu, intentar, dsSelect, uniqueOptions, flashRow, sinNuevo as texto } from "../lib/view";
 
   const scope = document.querySelector<HTMLElement>("[data-table]")!;
   const body = scope.querySelector<HTMLElement>("[data-body]")!;
@@ -81,7 +80,6 @@ import FormError from "../components/ui/FormError.astro";
       .map((b) => {
         const s = filas.filter((f) => f.bodega_id === b.id);
         const unidades = s.reduce((a, f) => a + f.cantidad, 0);
-        const valor = s.reduce((a, f) => a + f.valor, 0);
         const acciones = [
           { value: "ver", label: "Ver inventario", icon: "bi-box-seam" },
           { value: "editar", label: "Editar", icon: "bi-pencil" },
@@ -92,8 +90,7 @@ import FormError from "../components/ui/FormError.astro";
           <td><span class="strong">${esc(b.nombre)}</span>${b.activa ? "" : ' <span class="badge">Inactiva</span>'}</td>
           <td>${esc(b.ciudad)}<p class="sub">${esc(b.pais)}</p></td>
           <td class="num tnum">${s.length}</td>
-          <td class="num tnum" data-sort-value="${unidades}">${num(unidades)}</td>
-          <td class="num tnum strong" data-sort-value="${valor}">${money(valor)}</td>
+          <td class="num tnum strong" data-sort-value="${unidades}">${num(unidades)}</td>
           <td class="cell-actions">${menu(acciones)}</td>
         </tr>`;
       })

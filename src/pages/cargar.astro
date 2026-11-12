@@ -8,7 +8,7 @@ const tipos = [
   { id: "productos", label: "Productos", cols: ["Código", "Nombre", "Mínimo", "Unidad"], ejemplo: "LIB-003\tLibro de lectura\t20\tund" },
   { id: "precios", label: "Precios", cols: ["País", "Código", "Precio de venta"], ejemplo: "Colombia\tLIB-003\t50000" },
   { id: "bodegas", label: "Bodegas", cols: ["Nombre", "Ciudad", "País"], ejemplo: "Bodega Cali\tCali\tColombia" },
-  { id: "saldo", label: "Saldo inicial", cols: ["Bodega", "Código", "Cantidad", "Costo unitario"], ejemplo: "Bodega Bogotá\tLIB-001\t50\t24000" },
+  { id: "saldo", label: "Saldo inicial", cols: ["Bodega", "Código", "Cantidad"], ejemplo: "Bodega Bogotá\tP03\t50" },
 ];
 ---
 
@@ -25,7 +25,7 @@ const tipos = [
         <div class="carga-head">
           <p class="muted small">
             Columnas en este orden: {t.cols.map((c, j) => <span class="badge">{j + 1}. {c}</span>)}
-            {t.id === "saldo" && <span> · Entra como compra a «Saldo inicial» y fija el costo promedio.</span>}
+            {t.id === "saldo" && <span> · Lo que hay hoy en cada bodega.</span>}
             {t.id === "productos" && <span> · Si el código ya existe, se actualiza. Los precios van en la pestaña Precios.</span>}
             {t.id === "precios" && <span> · En la moneda de cada país. El país tiene que estar en Países y monedas.</span>}
             {t.id === "bodegas" && <span> · El país tiene que estar en Países y monedas.</span>}

@@ -8,7 +8,7 @@ import Select from "../components/ui/Select.astro";
 import DatePicker from "../components/ui/DatePicker.astro";
 import Modal from "../components/ui/Modal.astro";
 import FormError from "../components/ui/FormError.astro";
-import { TIPO_MOV, MONEDAS } from "../lib/store";
+import { TIPO_MOV } from "../lib/store";
 
 const tipos = Object.entries(TIPO_MOV).map(([value, t]) => ({ value, label: t.label, hint: `${t.desde} → ${t.hacia}` }));
 ---
@@ -63,15 +63,6 @@ const tipos = Object.entries(TIPO_MOV).map(([value, t]) => ({ value, label: t.la
         <span class="label">Fecha</span>
         <DatePicker name="fecha" label="Fecha" />
       </div>
-      <div class="field" data-show="compra">
-        <span class="label">Moneda</span>
-        <Select name="moneda" value="COP" searchable label="Moneda" options={MONEDAS} />
-      </div>
-      <div class="field" data-show="compra" data-tasa hidden>
-        <label for="mv-tasa" data-tasa-label>Tasa de cambio</label>
-        <input id="mv-tasa" name="tasa" class="input tnum" type="text" inputmode="decimal" data-money placeholder="Ej. 4.000" />
-        <span class="hint">Cuántos pesos vale 1 unidad de esa moneda.</span>
-      </div>
       <div class="field" data-show="traslado entrega devolucion venta ajuste_salida">
         <span class="label">Sale de</span>
         <Select name="origen" searchable placeholder="Elegir" options={[]} />
@@ -93,7 +84,7 @@ const tipos = Object.entries(TIPO_MOV).map(([value, t]) => ({ value, label: t.la
         <span class="label">Productos</span>
         <div class="items" data-items>
           <div class="item-row item-head caps">
-            <span>Producto</span><span class="num">Cantidad</span><span class="num" data-valor-label>Costo unitario</span><span class="num">Subtotal</span><span></span>
+            <span>Producto</span><span class="num">Cantidad</span><span class="num" data-valor-label>Precio unit.</span><span class="num" data-sub-label>Subtotal</span><span></span>
           </div>
         </div>
         <div class="items-foot">
@@ -125,7 +116,7 @@ const tipos = Object.entries(TIPO_MOV).map(([value, t]) => ({ value, label: t.la
     <dl class="det-info" data-det-info></dl>
     <div class="table-wrap">
       <table class="table">
-        <thead><tr><th>Producto</th><th class="num">Cantidad</th><th class="num" data-det-valor>Valor unit.</th><th class="num">Costo unit.</th></tr></thead>
+        <thead><tr><th>Producto</th><th class="num">Cantidad</th><th class="num" data-det-valor>Precio</th></tr></thead>
         <tbody data-det-items></tbody>
       </table>
     </div>
@@ -214,7 +205,7 @@ const tipos = Object.entries(TIPO_MOV).map(([value, t]) => ({ value, label: t.la
   import "../lib/ui";
   import { initTableFilter } from "../lib/ui/table-filter";
   import {
-    movimientos, bodegas, bodega, productos, cantidadEn, costoPromedio, registrarMovimiento, anularMovimiento, totalMov, totalLocal, unidadesMov, TIPO_MOV, REGLAS, MONEDA, type TipoMov, type Movimiento, rutaMov, metodosPago, metodoPago, esVentaOficina, monedaDe, precioEn, tasaDe, producto,
+    movimientos, bodegas, bodega, productos, cantidadEn, registrarMovimiento, anularMovimiento, totalMov, totalLocal, unidadesMov, TIPO_MOV, REGLAS, MONEDA, type TipoMov, type Movimiento, rutaMov, metodosPago, metodoPago, esVentaOficina, monedaDe, precioEn, producto,
   } from "../lib/store";
   import { money, num, day, dayYear, esc, searchText, menu, dsSelect, intentar, parseNum, urlParam, today, flashRow, opcionesLugar, type DsSelectEl } from "../lib/view";
 
@@ -230,7 +221,7 @@ const tipos = Object.entries(TIPO_MOV).map(([value, t]) => ({ value, label: t.la
       .map((m) => {
         const t = TIPO_MOV[m.tipo];
         const nombres = m.items.map((i) => producto(i.producto_id)?.nombre);
-        const extra = [esVentaOficina(m) ? "Oficina" : "", m.curso, metodoPago(m.metodo_pago_id)?.nombre, m.moneda !== MONEDA ? `${money(totalLocal(m), m.moneda)} (1 ${m.moneda} = ${money(m.tasa)})` : "", m.nota].filter(Boolean).join(" · ");
+        const extra = [esVentaOficina(m) ? "Oficina" : "", m.curso, metodoPago(m.metodo_pago_id)?.nombre, m.tipo === "venta" && m.moneda !== MONEDA ? `${money(totalLocal(m), m.moneda)} (1 ${m.moneda} = ${money(m.tasa)})` : "", m.nota].filter(Boolean).join(" · ");
         const acciones = [{ value: "ver", label: "Ver detalle", icon: "bi-eye" }, ...(m.anulado ? [] : [{ separator: true }, { value: "anular", label: "Anular", icon: "bi-x-circle", danger: true }])];
         return `<tr data-row data-id="${m.id}" data-tipo="${m.tipo}" data-estado="${m.anulado ? "anulado" : "vigente"}"
             data-ubicacion="${[m.origen_id, m.destino_id].filter(Boolean).join(" ")}" data-text="${esc(searchText(m.id, `#${m.id}`, t.label, m.curso, m.nota, de(m), a(m), ...nombres))}"
@@ -240,7 +231,7 @@ const tipos = Object.entries(TIPO_MOV).map(([value, t]) => ({ value, label: t.la
           <td class="nowrap"><i class="bi ${t.icon} muted" aria-hidden="true"></i> ${t.label}${m.anulado ? ' <span class="badge danger">Anulado</span>' : ""}</td>
           <td class="ruta">${esc(de(m))} <span class="muted">→</span> ${esc(a(m))}${extra ? `<p class="sub">${esc(extra)}</p>` : ""}</td>
           <td class="num tnum" data-sort-value="${unidadesMov(m)}">${num(unidadesMov(m))}</td>
-          <td class="num tnum" data-sort-value="${totalMov(m)}">${money(totalMov(m))}</td>
+          <td class="num tnum" data-sort-value="${m.tipo === "venta" ? totalMov(m) : 0}">${m.tipo === "venta" ? money(totalMov(m)) : '<span class="muted">—</span>'}</td>
           <td class="nowrap">${esc(m.creado_por)}</td>
           <td class="cell-actions">${menu(acciones)}</td>
         </tr>`;
@@ -261,20 +252,19 @@ const tipos = Object.entries(TIPO_MOV).map(([value, t]) => ({ value, label: t.la
   const modal = document.getElementById("mov-modal")!;
   const form = modal.querySelector<HTMLFormElement>("[data-mov-form]")!;
   const sel = (name: string) => dsSelect(form, `ds-select[name=${name}]`);
-  const tipo = sel("tipo"), origen = sel("origen"), destino = sel("destino"), moneda = sel("moneda"), metodo = sel("metodo");
+  const tipo = sel("tipo"), origen = sel("origen"), destino = sel("destino"), metodo = sel("metodo");
   const fecha = form.querySelector<HTMLElement & { value: string }>("ds-date[name=fecha]")!;
   const items = form.querySelector<HTMLElement>("[data-items]")!;
   const tpl = modal.querySelector<HTMLTemplateElement>("[data-item-tpl]")!;
   const valorLabel = form.querySelector<HTMLElement>("[data-valor-label]")!;
-  const tasaField = form.querySelector<HTMLElement>("[data-tasa]")!;
   const totalEl = form.querySelector<HTMLElement>("[data-total]")!;
   const rows = () => [...items.querySelectorAll<HTMLElement>("[data-item]")];
   const t = () => tipo.value as TipoMov;
-  const conValor = () => t() === "compra" || t() === "venta";
-  // Moneda del movimiento: la venta va en la del país de donde sale; la compra en la que se elija
+  // Solo la venta lleva plata (el precio en la moneda del país de donde sale); las compras no llevan costo por ahora
+  const conValor = () => t() === "venta";
   const lugarVenta = () => bodega(origen.value);
-  const cur = () => (t() === "venta" ? monedaDe(lugarVenta()).moneda : t() === "compra" ? moneda.value || MONEDA : MONEDA);
-  const tasaActual = () => (cur() === MONEDA ? 1 : t() === "venta" ? monedaDe(lugarVenta()).tasa : parseNum(form.querySelector<HTMLInputElement>("[name=tasa]")!.value));
+  const cur = () => (t() === "venta" ? monedaDe(lugarVenta()).moneda : MONEDA);
+  const tasaActual = () => (cur() === MONEDA ? 1 : monedaDe(lugarVenta()).tasa);
 
   const lugares = (tipos: ("bodega" | "monitor")[] | null) =>
     bodegas()
@@ -309,8 +299,6 @@ const tipos = Object.entries(TIPO_MOV).map(([value, t]) => ({ value, label: t.la
   function sync() {
     const r = REGLAS[t()];
     form.querySelectorAll<HTMLElement>("[data-show]").forEach((f) => (f.hidden = !f.dataset.show!.split(" ").includes(t())));
-    tasaField.hidden = t() !== "compra" || moneda.value === MONEDA;
-    form.querySelector("[data-tasa-label]")!.textContent = `Tasa: 1 ${moneda.value} en pesos`;
     // Origen y destino: solo los lugares que acepta el tipo
     const keep = (s: DsSelectEl, opts: { value: string }[]) => {
       s.setOptions(opts as never);
@@ -318,15 +306,17 @@ const tipos = Object.entries(TIPO_MOV).map(([value, t]) => ({ value, label: t.la
     };
     keep(origen, lugares(r.origen));
     keep(destino, lugares(r.destino));
-    valorLabel.textContent = t() === "venta" ? (cur() === MONEDA ? "Precio unit." : `Precio (${cur()})`) : t() === "compra" ? (cur() === MONEDA ? "Costo unit." : `Costo (${cur()})`) : "";
+    valorLabel.textContent = t() === "venta" ? (cur() === MONEDA ? "Precio unit." : `Precio (${cur()})`) : "";
     form.querySelector<HTMLElement>("[data-total-wrap]")!.hidden = !conValor();
+    form.querySelector<HTMLElement>("[data-sub-label]")!.style.visibility = conValor() ? "" : "hidden";
+    rows().forEach((row) => (row.querySelector<HTMLElement>("[data-subtotal]")!.style.visibility = conValor() ? "" : "hidden"));
     const opts = productOptions();
     rows().forEach((row) => {
       const p = row.querySelector<DsSelectEl>("ds-select")!;
       p.setOptions(opts);
       const v = row.querySelector<HTMLInputElement>("[data-valor]")!;
       v.style.visibility = conValor() ? "" : "hidden";
-      v.placeholder = t() === "venta" ? "Precio c/u" : "Costo c/u";
+      v.placeholder = "Precio c/u";
     });
     recalc();
   }
@@ -338,13 +328,13 @@ const tipos = Object.entries(TIPO_MOV).map(([value, t]) => ({ value, label: t.la
     p.setOptions(productOptions());
     const valor = row.querySelector<HTMLInputElement>("[data-valor]")!;
     valor.style.visibility = conValor() ? "" : "hidden";
-    valor.placeholder = t() === "venta" ? "Precio c/u" : "Costo c/u";
+    valor.placeholder = "Precio c/u";
+    row.querySelector<HTMLElement>("[data-subtotal]")!.style.visibility = conValor() ? "" : "hidden";
     // Venta: el precio del producto en el país de donde sale
     p.addEventListener("change", () => {
       const v = row.querySelector<HTMLInputElement>("[name=valor]")!;
       const precio = precioEn(p.value, lugarVenta()?.pais);
       if (t() === "venta" && !v.value && precio) v.value = num(precio);
-      if (t() === "compra" && !v.value && moneda.value === MONEDA) v.value = costoPromedio().get(p.value) ? num(Math.round(costoPromedio().get(p.value)!)) : "";
       recalc();
       row.querySelector<HTMLInputElement>("[name=cantidad]")!.focus();
     });
@@ -356,7 +346,6 @@ const tipos = Object.entries(TIPO_MOV).map(([value, t]) => ({ value, label: t.la
     rows().forEach((r) => r.remove());
     tipo.value = preset.tipo && preset.tipo in TIPO_MOV ? preset.tipo : "compra";
     fecha.value = today();
-    moneda.value = MONEDA;
     metodo.setOptions(metodosPago().filter((m) => m.activo).map((m) => ({ value: String(m.id), label: m.nombre })));
     metodo.value = "";
     sync();
@@ -369,12 +358,6 @@ const tipos = Object.entries(TIPO_MOV).map(([value, t]) => ({ value, label: t.la
   }
 
   tipo.addEventListener("change", sync);
-  moneda.addEventListener("change", () => {
-    // Compra en otra moneda: la tasa de esa moneda en Países (se puede cambiar)
-    const tasa = form.querySelector<HTMLInputElement>("[name=tasa]")!;
-    if (moneda.value !== MONEDA) tasa.value = tasaDe(moneda.value) ? num(tasaDe(moneda.value)) : "";
-    sync();
-  });
   origen.addEventListener("change", sync);
   form.addEventListener("input", recalc);
   form.querySelector("[data-add-item]")!.addEventListener("click", () => {
@@ -401,13 +384,11 @@ const tipos = Object.entries(TIPO_MOV).map(([value, t]) => ({ value, label: t.la
         destino_id: destino.value,
         metodo_pago_id: metodo.value ? Number(metodo.value) : undefined,
         curso: form.querySelector<HTMLInputElement>("[name=curso]")!.value,
-        moneda: moneda.value,
-        tasa: parseNum(form.querySelector<HTMLInputElement>("[name=tasa]")!.value),
         nota: form.querySelector<HTMLTextAreaElement>("[name=nota]")!.value,
         items: rows().map((r) => ({
           producto_id: r.querySelector<DsSelectEl>("ds-select")!.value,
           cantidad: parseNum(r.querySelector<HTMLInputElement>("[name=cantidad]")!.value),
-          valor_unitario: parseNum(r.querySelector<HTMLInputElement>("[name=valor]")!.value),
+          valor_unitario: conValor() ? parseNum(r.querySelector<HTMLInputElement>("[name=valor]")!.value) : 0,
         })),
       });
       nuevo = mov.id;
@@ -435,8 +416,8 @@ const tipos = Object.entries(TIPO_MOV).map(([value, t]) => ({ value, label: t.la
       ["Vendido en", esVentaOficina(m) ? "Oficina" : undefined],
       ["Curso", m.curso],
       ["Pago", metodoPago(m.metodo_pago_id)?.nombre],
-      ["Moneda", m.moneda !== MONEDA ? `${m.moneda} · 1 ${m.moneda} = ${money(m.tasa)}` : undefined],
-      ["Total", m.moneda !== MONEDA && (m.tipo === "venta" || m.tipo === "compra") ? `${money(totalLocal(m), m.moneda)} = ${money(totalMov(m))}` : money(totalMov(m))],
+      ["Moneda", m.tipo === "venta" && m.moneda !== MONEDA ? `${m.moneda} · 1 ${m.moneda} = ${money(m.tasa)}` : undefined],
+      ["Total", m.tipo !== "venta" ? undefined : m.moneda !== MONEDA ? `${money(totalLocal(m), m.moneda)} = ${money(totalMov(m))}` : money(totalMov(m))],
       ["Hecho por", m.creado_por],
       ["Nota", m.nota],
     ];
@@ -444,12 +425,12 @@ const tipos = Object.entries(TIPO_MOV).map(([value, t]) => ({ value, label: t.la
       .filter(([, v]) => v)
       .map(([k, v]) => `<dt>${k}</dt><dd>${esc(v)}</dd>`)
       .join("");
-    const cv = m.tipo === "compra" || m.tipo === "venta";
-    det.querySelector<HTMLElement>("[data-det-valor]")!.textContent = m.tipo === "venta" ? `Precio (${m.moneda})` : m.tipo === "compra" ? `Costo (${m.moneda})` : "";
+    const cv = m.tipo === "venta";
+    det.querySelector<HTMLElement>("[data-det-valor]")!.textContent = cv ? `Precio (${m.moneda})` : "";
     det.querySelector("[data-det-items]")!.innerHTML = m.items
       .map(
         (i) => `<tr><td class="strong">${esc(producto(i.producto_id)?.nombre)}</td><td class="num tnum">${num(i.cantidad)}</td>
-          <td class="num tnum">${cv ? money(i.valor_unitario, m.moneda) : ""}</td><td class="num tnum">${money(i.costo_unitario)}</td></tr>`,
+          <td class="num tnum">${cv ? money(i.valor_unitario, m.moneda) : ""}</td></tr>`,
       )
       .join("");
     det.querySelector<HTMLElement>("[data-det-anular]")!.hidden = m.anulado;

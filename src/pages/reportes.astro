@@ -1,5 +1,5 @@
 ---
-// Reportes (admin): ventas y ganancias por fecha, monitor, curso, país y producto. Descarga a Excel lo que se ve.
+// Reportes (admin): ventas por fecha, monitor, curso, país y producto. Descarga a Excel lo que se ve.
 import AppLayout from "../layouts/AppLayout.astro";
 import PageHeader from "../components/ui/PageHeader.astro";
 import StatCard from "../components/ui/StatCard.astro";
@@ -16,14 +16,12 @@ const grupos = [
 ---
 
 <AppLayout title="Reportes">
-  <PageHeader title="Reportes" subtitle="Ventas y ganancias">
+  <PageHeader title="Reportes" subtitle="Ventas">
     <button slot="actions" type="button" class="btn btn-ghost" data-excel><i class="bi bi-file-earmark-spreadsheet" aria-hidden="true"></i>Descargar Excel</button>
   </PageHeader>
 
   <section class="card kpis" data-kpis>
     <StatCard label="Vendido" value="—" dataKey="total" hint="Todo en pesos" />
-    <StatCard label="Costo" value="—" dataKey="costo" />
-    <StatCard label="Ganancia" value="—" dataKey="ganancia" />
     <StatCard label="Unidades" value="—" dataKey="cantidad" />
   </section>
 
@@ -53,8 +51,6 @@ const grupos = [
             <th data-sort="text">Curso</th>
             <th class="num" data-sort="num">Cant.</th>
             <th class="num" data-sort="num">Vendido</th>
-            <th class="num" data-sort="num">Costo</th>
-            <th class="num" data-sort="num">Ganancia</th>
           </tr>
         </thead>
         <tbody data-body></tbody>
@@ -68,9 +64,6 @@ const grupos = [
             <th data-card-title data-group-title>Monitor</th>
             <th class="num">Unidades</th>
             <th class="num">Vendido</th>
-            <th class="num">Costo</th>
-            <th class="num">Ganancia</th>
-            <th class="num">Margen</th>
           </tr>
         </thead>
         <tbody data-group-body></tbody>
@@ -106,7 +99,6 @@ const grupos = [
     return v.items.map((i) => {
       const local = i.cantidad * i.valor_unitario; // en la moneda del país
       const total = local * v.tasa; // en pesos
-      const costo = i.cantidad * i.costo_unitario;
       return {
         fecha: v.fecha,
         mes: v.fecha.slice(0, 7),
@@ -119,8 +111,6 @@ const grupos = [
         moneda: v.moneda,
         local,
         total,
-        costo,
-        ganancia: total - costo,
       };
     });
   });
@@ -147,8 +137,6 @@ const grupos = [
         <td>${esc(l.curso)}<p class="sub">${esc(l.pago)}</p></td>
         <td class="num tnum">${num(l.cantidad)}</td>
         <td class="num tnum" data-sort-value="${l.total}">${money(l.total)}${l.moneda !== "COP" ? `<p class="sub">${money(l.local, l.moneda)}</p>` : ""}</td>
-        <td class="num tnum muted" data-sort-value="${l.costo}">${money(l.costo)}</td>
-        <td class="num tnum strong" data-sort-value="${l.ganancia}">${money(l.ganancia)}</td>
       </tr>`,
     )
     .join("");
@@ -157,14 +145,12 @@ const grupos = [
   let groupBy = "";
   let visibles: Linea[] = lineas;
   const grupos = (ls: Linea[]) => {
-    const m = new Map<string, { cantidad: number; total: number; costo: number; ganancia: number }>();
+    const m = new Map<string, { cantidad: number; total: number }>();
     for (const l of ls) {
       const k = String(l[groupBy as keyof Linea]);
-      const g = m.get(k) ?? { cantidad: 0, total: 0, costo: 0, ganancia: 0 };
+      const g = m.get(k) ?? { cantidad: 0, total: 0 };
       g.cantidad += l.cantidad;
       g.total += l.total;
-      g.costo += l.costo;
-      g.ganancia += l.ganancia;
       m.set(k, g);
     }
     return [...m].sort((a, b) => b[1].total - a[1].total);
@@ -178,9 +164,7 @@ const grupos = [
     scope.querySelector("[data-group-title]")!.textContent = scope.querySelector(`[data-group-by="${groupBy}"]`)!.textContent!;
     scope.querySelector("[data-group-body]")!.innerHTML = grupos(visibles)
       .map(
-        ([k, g]) => `<tr><td class="strong">${esc(k)}</td><td class="num tnum">${num(g.cantidad)}</td><td class="num tnum">${money(g.total)}</td>
-          <td class="num tnum muted">${money(g.costo)}</td><td class="num tnum strong">${money(g.ganancia)}</td>
-          <td class="num tnum">${g.total ? Math.round((g.ganancia / g.total) * 100) : 0}%</td></tr>`,
+        ([k, g]) => `<tr><td class="strong">${esc(k)}</td><td class="num tnum">${num(g.cantidad)}</td><td class="num tnum strong">${money(g.total)}</td></tr>`,
       )
       .join("");
   }
@@ -195,11 +179,8 @@ const grupos = [
   const kpis = document.querySelector<HTMLElement>("[data-kpis]")!;
   const table = initTableFilter(scope, ({ visible }) => {
     visibles = visible.map((r) => lineas[Number(r.dataset.i)]!);
-    const sum = (k: "total" | "costo" | "ganancia" | "cantidad") => visibles.reduce((a, l) => a + l[k], 0);
-    const total = sum("total");
-    setKpi(kpis, "total", money(total));
-    setKpi(kpis, "costo", money(sum("costo")));
-    setKpi(kpis, "ganancia", money(sum("ganancia")), total ? `${Math.round((sum("ganancia") / total) * 100)}%` : "", "up");
+    const sum = (k: "total" | "cantidad") => visibles.reduce((a, l) => a + l[k], 0);
+    setKpi(kpis, "total", money(sum("total")));
     setKpi(kpis, "cantidad", num(sum("cantidad")));
     pintarGrupos();
   });
@@ -209,12 +190,12 @@ const grupos = [
   document.querySelector("[data-excel]")!.addEventListener("click", () => {
     const rows: (string | number)[][] = groupBy
       ? [
-          [scope.querySelector(`[data-group-by="${groupBy}"]`)!.textContent!, "Unidades", "Vendido (pesos)", "Costo (pesos)", "Ganancia (pesos)"],
-          ...grupos(visibles).map(([k, g]) => [k, g.cantidad, Math.round(g.total), Math.round(g.costo), Math.round(g.ganancia)]),
+          [scope.querySelector(`[data-group-by="${groupBy}"]`)!.textContent!, "Unidades", "Vendido (pesos)"],
+          ...grupos(visibles).map(([k, g]) => [k, g.cantidad, Math.round(g.total)]),
         ]
       : [
-          ["Fecha", "Producto", "Vendió", "País", "Curso", "Pago", "Cantidad", "Moneda", "Cobrado (en su moneda)", "Vendido (pesos)", "Costo (pesos)", "Ganancia (pesos)"],
-          ...visibles.map((l) => [l.fecha, l.producto, l.monitor, l.pais, l.curso, l.pago, l.cantidad, l.moneda, l.local, Math.round(l.total), Math.round(l.costo), Math.round(l.ganancia)]),
+          ["Fecha", "Producto", "Vendió", "País", "Curso", "Pago", "Cantidad", "Moneda", "Cobrado (en su moneda)", "Vendido (pesos)"],
+          ...visibles.map((l) => [l.fecha, l.producto, l.monitor, l.pais, l.curso, l.pago, l.cantidad, l.moneda, l.local, Math.round(l.total)]),
         ];
     descargarCsv(`ventas-jdt${groupBy ? `-por-${groupBy}` : ""}.csv`, rows);
     window.ui.toast("Archivo descargado", { tone: "success" });

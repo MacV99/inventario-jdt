@@ -509,8 +509,8 @@ function registrarLocal(input: NuevoMovimiento, state: State): Movimiento {
 
   const items = input.items.filter((i) => i.producto_id && i.cantidad > 0);
   if (!items.length) throw new Error("Agrega al menos un producto con cantidad.");
-  if ((input.tipo === "compra" || input.tipo === "venta") && items.some((i) => !(Number(i.valor_unitario) > 0)))
-    throw new Error(input.tipo === "compra" ? "Escribe el costo de cada producto." : "Escribe el precio de cada producto.");
+  // Las compras ya no llevan costo (por ahora): solo la venta pide precio
+  if (input.tipo === "venta" && items.some((i) => !(Number(i.valor_unitario) > 0))) throw new Error("Escribe el precio de cada producto.");
 
   // No se puede sacar más de lo que hay (sumando el mismo producto repetido)
   if (o) {
@@ -845,21 +845,19 @@ export async function cargarBodegas(filas: string[][], guardar = false): Promise
   return revisadas;
 }
 
-/** Saldo inicial: entra como compra al proveedor «Saldo inicial» (así fija el costo promedio). Una por bodega. */
+/** Saldo inicial: entra como compra al proveedor «Saldo inicial», sin costo. Una por bodega. */
 export async function cargarSaldoInicial(filas: string[][], num: (s: string) => number, guardar = false): Promise<Revision[]> {
   const s = load();
   const revisadas = filas.map((f, i) => {
-    const [bod = "", codigo = "", cantidad = "", costo = ""] = f.map((x) => x.trim());
-    const r = { fila: i + 1, datos: [bod, codigo, cantidad, costo] };
+    const [bod = "", codigo = "", cantidad = ""] = f.map((x) => x.trim());
+    const r = { fila: i + 1, datos: [bod, codigo, cantidad] };
     const b = s.bodegas.find((x) => x.tipo === "bodega" && llave(x.nombre) === llave(bod));
     const p = s.productos.find((x) => llave(x.codigo) === llave(codigo));
-    if (!b) return { ...r, ok: false, estado: "No existe esa bodega", b, p, q: 0, c: 0 };
-    if (!p) return { ...r, ok: false, estado: "No existe ese código", b, p, q: 0, c: 0 };
+    if (!b) return { ...r, ok: false, estado: "No existe esa bodega", b, p, q: 0 };
+    if (!p) return { ...r, ok: false, estado: "No existe ese código", b, p, q: 0 };
     const q = num(cantidad);
-    const c = num(costo);
-    if (!(q > 0)) return { ...r, ok: false, estado: "Cantidad no válida", b, p, q, c };
-    if (!(c > 0)) return { ...r, ok: false, estado: "Falta el costo", b, p, q, c };
-    return { ...r, ok: true, estado: `Entra a ${b.nombre}`, b, p, q, c };
+    if (!(q > 0)) return { ...r, ok: false, estado: "Cantidad no válida", b, p, q };
+    return { ...r, ok: true, estado: `Entra a ${b.nombre}`, b, p, q };
   });
   if (guardar) {
     const prov = s.proveedores.find((p) => llave(p.nombre) === "saldo inicial");
@@ -871,7 +869,7 @@ export async function cargarSaldoInicial(filas: string[][], num: (s: string) => 
       proveedor_id: prov?.id,
       proveedor_nuevo: prov ? undefined : "Saldo inicial",
       nota: "Saldo inicial (cargado desde Excel)",
-      items: rs.map((r) => ({ producto_id: r.p!.id, cantidad: r.q, valor_unitario: r.c })),
+      items: rs.map((r) => ({ producto_id: r.p!.id, cantidad: r.q, valor_unitario: 0 })),
     }));
     if (movs.length) await registrarMovimientos(movs);
   }
@@ -879,7 +877,7 @@ export async function cargarSaldoInicial(filas: string[][], num: (s: string) => 
 }
 
 // ── Datos de ejemplo (solo prueba local) ─────────────────────────────
-// Datos de ejemplo con los países y productos reales de JDT (2026-11-11). Cantidades y costos inventados.
+// Datos de ejemplo con los países y productos reales de JDT (2026-11-11). Cantidades inventadas; compras sin costo.
 function seed(): State {
   // (dentro de la función: el módulo carga los datos antes de llegar al final del archivo)
   const NOMBRES = [
@@ -953,7 +951,6 @@ function seed(): State {
   };
   // Una compra inicial por bodega con todos los productos (cantidades y costos inventados pero fijos)
   const cant = (b: number, p: number) => ((b * 7 + p * 13) % 40) + 5;
-  const costo = (p: number) => 5000 + ((p * 3700) % 60000);
   ["b1", "b2", "b3", "b4", "b5", "b6", "b7", "b8", "b9"].forEach((b, bi) =>
     reg({
       tipo: "compra",
@@ -961,7 +958,7 @@ function seed(): State {
       destino_id: b,
       proveedor_id: "v1",
       nota: "Inventario inicial",
-      items: NOMBRES.map((_, pi) => it(`p${pi + 1}`, cant(bi + 1, pi + 1) * (b === "b1" ? 3 : 1), costo(pi + 1))),
+      items: NOMBRES.map((_, pi) => it(`p${pi + 1}`, cant(bi + 1, pi + 1) * (b === "b1" ? 3 : 1))),
     }),
   );
   reg({ tipo: "traslado", fecha: "2026-10-15", origen_id: "b1", destino_id: "b2", por: "Leidy", items: [it("p3", 20), it("p4", 10), it("p6", 15)] });
