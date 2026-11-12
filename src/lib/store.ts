@@ -112,7 +112,7 @@ export const ROL: Record<Rol, { label: string }> = {
 const KEY_DEMO = "jdt-inventario-demo";
 const KEY_CACHE = "jdt-inv-datos";
 const KEY_VER = "jdt-inv-ver-como";
-const VERSION = 3;
+const VERSION = 4;
 const hoy = () => new Date().toLocaleDateString("en-CA"); // AAAA-MM-DD en la hora local
 
 /** Prueba local sin sesión: datos de ejemplo (también en una copia armada con PUBLIC_DEMO=1). En la página publicada nunca. */
@@ -893,14 +893,28 @@ export async function cargarSaldoInicial(filas: string[][], num: (s: string) => 
 }
 
 // ── Datos de ejemplo (solo prueba local) ─────────────────────────────
+// Datos de ejemplo con los países y productos reales de JDT (2026-11-11). Cantidades y costos inventados.
 function seed(): State {
+  // (dentro de la función: el módulo carga los datos antes de llegar al final del archivo)
+  const NOMBRES = [
+    "MEMORIAS R1", "MEMORIAS R2", "LIBROS", "RESINA 1KG", "RESINA 3KG", "PIGMENTOS", "MEZCLADORES", "ESPATULAS", "HARAGAN",
+    "ZAPATOS", "RODILLO", "LETRAS", "PORTAVASOSX2", "PORTAVASOS CON BASE", "PISTOLA CALOR", "AGENDA", "SEMI DISEÑAR",
+    "94 PIEZAS", "IMÁGENES", "TABLAS", "BOLIGRAFOS", "BANDEJA", "POURING", "RELOJ", "DOMINO", "PINZAS", "SEPARADORES",
+    "SEPARADORES IND", "AJEDREZ COMPLETO", "TABLA AJEDREZ", "MOLDE PLACA", "DULCERA", "TALADRO ACCESORIOS", "ARETES",
+    "MOLDE PEINE", "MOLDE MASCOTAS",
+  ];
   const s: State = {
     version: VERSION,
     yo: { id: "u1", nombre: "German", usuario: "german", rol: "admin" },
     paises: [
+      { nombre: "Bolivia", moneda: "BOB", tasa: 580 },
       { nombre: "Colombia", moneda: "COP", tasa: 1 },
-      { nombre: "México", moneda: "MXN", tasa: 215 },
+      { nombre: "Ecuador", moneda: "USD", tasa: 4000 },
       { nombre: "Perú", moneda: "PEN", tasa: 1100 },
+      { nombre: "Puerto Rico", moneda: "USD", tasa: 4000 },
+      { nombre: "República Dominicana", moneda: "DOP", tasa: 65 },
+      { nombre: "Salvador", moneda: "USD", tasa: 4000 },
+      { nombre: "Venezuela", moneda: "USD", tasa: 4000 },
     ],
     perfiles: [
       { id: "u0", nombre: "MacV", usuario: "macv", rol: "superadmin", activo: true, creado: "2026-10-01", propio: false },
@@ -914,22 +928,29 @@ function seed(): State {
       { id: "b1", nombre: "Bodega Bogotá", ciudad: "Bogotá", pais: "Colombia", tipo: "bodega", activa: true },
       { id: "b2", nombre: "Bodega Medellín", ciudad: "Medellín", pais: "Colombia", tipo: "bodega", activa: true },
       { id: "b3", nombre: "Bodega Lima", ciudad: "Lima", pais: "Perú", tipo: "bodega", activa: true },
-      { id: "b4", nombre: "Bodega CDMX", ciudad: "Ciudad de México", pais: "México", tipo: "bodega", activa: true },
+      { id: "b4", nombre: "Bodega Santa Cruz", ciudad: "Santa Cruz", pais: "Bolivia", tipo: "bodega", activa: true },
+      { id: "b5", nombre: "Bodega Quito", ciudad: "Quito", pais: "Ecuador", tipo: "bodega", activa: true },
+      { id: "b6", nombre: "Bodega San Juan", ciudad: "San Juan", pais: "Puerto Rico", tipo: "bodega", activa: true },
+      { id: "b7", nombre: "Bodega Santo Domingo", ciudad: "Santo Domingo", pais: "República Dominicana", tipo: "bodega", activa: true },
+      { id: "b8", nombre: "Bodega San Salvador", ciudad: "San Salvador", pais: "Salvador", tipo: "bodega", activa: true },
+      { id: "b9", nombre: "Bodega Caracas", ciudad: "Caracas", pais: "Venezuela", tipo: "bodega", activa: true },
       { id: "m1", nombre: "Maleta Carlos Rojas", ciudad: "Bogotá", pais: "Colombia", tipo: "monitor", monitor_id: "u3", activa: true },
       { id: "m2", nombre: "Maleta Andrea Gómez", ciudad: "Lima", pais: "Perú", tipo: "monitor", monitor_id: "u4", activa: true },
       { id: "m3", nombre: "Maleta Luis Pérez", ciudad: "Medellín", pais: "Colombia", tipo: "monitor", monitor_id: "u5", activa: true },
     ],
-    productos: [
-      { id: "p1", codigo: "LIB-001", nombre: "Libro Método JDT", unidad: "und", precios: { Colombia: 60000, Perú: 60, México: 300 }, stock_minimo: 30, activo: true },
-      { id: "p2", codigo: "LIB-002", nombre: "Cuaderno de ejercicios", unidad: "und", precios: { Colombia: 35000, Perú: 35, México: 180 }, stock_minimo: 30, activo: true },
-      { id: "p3", codigo: "KIT-001", nombre: "Kit de práctica", unidad: "und", precios: { Colombia: 120000, Perú: 120 }, stock_minimo: 10, activo: true },
-      { id: "p4", codigo: "USB-001", nombre: "Memoria USB con audios", unidad: "und", precios: { Colombia: 45000 }, stock_minimo: 20, activo: true },
-      { id: "p5", codigo: "CAM-001", nombre: "Camiseta JDT", unidad: "und", precios: { Colombia: 40000, Perú: 40 }, stock_minimo: 15, activo: true },
-    ],
+    // Sin precios por ahora
+    productos: NOMBRES.map((nombre, i) => ({
+      id: `p${i + 1}`,
+      codigo: `P${String(i + 1).padStart(2, "0")}`,
+      nombre,
+      unidad: "und",
+      precios: {},
+      stock_minimo: 10,
+      activo: true,
+    })),
     proveedores: [
-      { id: "v1", nombre: "Editorial Andina", contacto: "ventas@andina.co · 310 555 1234" },
-      { id: "v2", nombre: "Textiles Bogotá", contacto: "320 555 8899" },
-      { id: "v3", nombre: "Tecno Import", contacto: "tecno@import.com" },
+      { id: "v1", nombre: "Proveedor principal", contacto: "310 555 1234" },
+      { id: "v2", nombre: "Importadora", contacto: "320 555 8899" },
     ],
     metodos_pago: [
       { id: 1, nombre: "Efectivo", activo: true },
@@ -947,30 +968,31 @@ function seed(): State {
     s.yo.nombre = m.por ?? "German";
     return registrarLocal(m, s);
   };
-  reg({ tipo: "compra", fecha: "2026-10-05", destino_id: "b1", proveedor_id: "v1", nota: "Factura 4410", items: [it("p1", 200, 24000), it("p2", 120, 12000)] });
-  reg({ tipo: "compra", fecha: "2026-10-08", destino_id: "b1", proveedor_id: "v3", moneda: "USD", tasa: 4000, nota: "Pedido 88", items: [it("p4", 80, 3.9), it("p3", 30, 12)] });
-  reg({ tipo: "compra", fecha: "2026-10-12", destino_id: "b3", proveedor_id: "v2", items: [it("p5", 40, 18000)] });
-  reg({ tipo: "compra", fecha: "2026-10-12", destino_id: "b1", proveedor_id: "v2", items: [it("p5", 20, 18000)] });
-  reg({ tipo: "traslado", fecha: "2026-10-15", origen_id: "b1", destino_id: "b2", por: "Leidy", items: [it("p1", 70), it("p2", 30), it("p4", 20)] });
-  reg({ tipo: "traslado", fecha: "2026-10-15", origen_id: "b1", destino_id: "b3", items: [it("p1", 40), it("p3", 8)] });
-  reg({ tipo: "traslado", fecha: "2026-10-16", origen_id: "b1", destino_id: "b4", items: [it("p1", 25), it("p2", 25)] });
-  reg({ tipo: "entrega", fecha: "2026-10-22", origen_id: "b2", destino_id: "m3", por: "Leidy", items: [it("p1", 20), it("p2", 10)] });
-  const errada = reg({ tipo: "venta", fecha: "2026-10-25", origen_id: "m3", metodo_pago_id: 1, curso: "Medellín · 25–26 oct", nota: "Error de cantidad", por: "Luis Pérez", items: [it("p1", 20, 60000)] });
-  anularLocal(errada.id, s);
-  reg({ tipo: "venta", fecha: "2026-10-26", origen_id: "m3", metodo_pago_id: 1, curso: "Medellín · 25–26 oct", por: "Luis Pérez", items: [it("p1", 8, 60000), it("p2", 4, 35000)] });
-  reg({ tipo: "devolucion", fecha: "2026-10-28", origen_id: "m3", destino_id: "b2", por: "Leidy", items: [it("p1", 5)] });
-  reg({ tipo: "ajuste_salida", fecha: "2026-11-01", origen_id: "b2", nota: "Libros mojados", items: [it("p1", 2)] });
-  reg({ tipo: "compra", fecha: "2026-11-02", destino_id: "b1", proveedor_id: "v1", nota: "Factura 4581", por: "Leidy", items: [it("p1", 100, 26000), it("p2", 60, 12000)] });
-  reg({ tipo: "venta", fecha: "2026-11-03", origen_id: "b1", metodo_pago_id: 5, nota: "Venta en oficina", por: "Leidy", items: [it("p1", 2, 60000), it("p5", 1, 40000)] });
-  reg({ tipo: "traslado", fecha: "2026-11-04", origen_id: "b1", destino_id: "b3", nota: "Para el curso de Lima", items: [it("p1", 30)] });
-  reg({ tipo: "entrega", fecha: "2026-11-06", origen_id: "b1", destino_id: "m1", items: [it("p1", 15), it("p2", 10), it("p4", 5)] });
-  reg({ tipo: "entrega", fecha: "2026-11-06", origen_id: "b3", destino_id: "m2", por: "Leidy", items: [it("p1", 14), it("p3", 2)] });
+  // Una compra inicial por bodega con todos los productos (cantidades y costos inventados pero fijos)
+  const cant = (b: number, p: number) => ((b * 7 + p * 13) % 40) + 5;
+  const costo = (p: number) => 5000 + ((p * 3700) % 60000);
+  ["b1", "b2", "b3", "b4", "b5", "b6", "b7", "b8", "b9"].forEach((b, bi) =>
+    reg({
+      tipo: "compra",
+      fecha: "2026-10-05",
+      destino_id: b,
+      proveedor_id: bi % 2 ? "v2" : "v1",
+      nota: "Inventario inicial",
+      items: NOMBRES.map((_, pi) => it(`p${pi + 1}`, cant(bi + 1, pi + 1) * (b === "b1" ? 3 : 1), costo(pi + 1))),
+    }),
+  );
+  reg({ tipo: "traslado", fecha: "2026-10-15", origen_id: "b1", destino_id: "b2", por: "Leidy", items: [it("p3", 20), it("p4", 10), it("p6", 15)] });
+  reg({ tipo: "entrega", fecha: "2026-10-22", origen_id: "b2", destino_id: "m3", por: "Leidy", items: [it("p3", 10), it("p4", 6), it("p6", 8)] });
+  reg({ tipo: "venta", fecha: "2026-10-26", origen_id: "m3", metodo_pago_id: 1, curso: "Medellín · 25–26 oct", por: "Luis Pérez", items: [it("p3", 4, 60000), it("p4", 2, 90000)] });
+  reg({ tipo: "ajuste_salida", fecha: "2026-11-01", origen_id: "b2", nota: "Resina dañada", items: [it("p4", 2)] });
+  reg({ tipo: "entrega", fecha: "2026-11-06", origen_id: "b1", destino_id: "m1", items: [it("p1", 10), it("p3", 10), it("p5", 4)] });
+  reg({ tipo: "entrega", fecha: "2026-11-06", origen_id: "b3", destino_id: "m2", por: "Leidy", items: [it("p3", 8), it("p6", 6)] });
   s.yo = { id: "u3", nombre: "Carlos Rojas", usuario: "carlos", rol: "monitor" };
-  registrarLocal({ tipo: "venta", fecha: "2026-11-07", origen_id: "m1", metodo_pago_id: 2, curso: "Bogotá · 7–8 nov", items: [it("p1", 3, 60000), it("p2", 2, 35000)] }, s);
+  registrarLocal({ tipo: "venta", fecha: "2026-11-07", origen_id: "m1", metodo_pago_id: 2, curso: "Bogotá · 7–8 nov", items: [it("p1", 3, 50000), it("p3", 2, 60000)] }, s);
   s.yo = { id: "u4", nombre: "Andrea Gómez", usuario: "andrea", rol: "monitor" };
-  registrarLocal({ tipo: "venta", fecha: "2026-11-07", origen_id: "m2", metodo_pago_id: 1, curso: "Lima · 7–8 nov", items: [it("p1", 4, 60)] }, s);
+  registrarLocal({ tipo: "venta", fecha: "2026-11-07", origen_id: "m2", metodo_pago_id: 1, curso: "Lima · 7–8 nov", items: [it("p3", 4, 60)] }, s);
   s.yo = { id: "u1", nombre: "German", usuario: "german", rol: "admin" };
-  s.pagos.push({ id: 1, bodega_id: "m3", fecha: "2026-10-27", valor: 400000, moneda: "COP", metodo_pago_id: 4, nota: "Transferencia", creado_por: "Leidy" });
+  s.pagos.push({ id: 1, bodega_id: "m3", fecha: "2026-10-27", valor: 300000, moneda: "COP", metodo_pago_id: 4, nota: "Transferencia", creado_por: "Leidy" });
   s.pagos.push({ id: 2, bodega_id: "m2", fecha: "2026-11-08", valor: 150, moneda: "PEN", metodo_pago_id: 1, creado_por: "Leidy" });
   return s;
 }
