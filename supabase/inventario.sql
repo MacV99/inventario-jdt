@@ -170,6 +170,11 @@ create table if not exists inventario.pagos (
   created_at     timestamptz not null default now()
 );
 create index if not exists pagos_bodega on inventario.pagos (bodega_id);
+-- Un pago mal escrito se anula (queda el registro), igual que los movimientos
+alter table inventario.pagos
+  add column if not exists anulado     boolean not null default false,
+  add column if not exists anulado_por uuid references inventario.perfiles(id),
+  add column if not exists anulado_en  timestamptz;
 
 -- Nadie entra a las tablas directo (solo las funciones de abajo)
 do $$
@@ -182,6 +187,12 @@ begin
 end $$;
 
 -- ── Ayudantes internos ───────────────────────────────────────────────
+-- Hoy en Colombia. La base trabaja en hora mundial: después de las 7 pm ya marca el día siguiente.
+create or replace function inventario.hoy()
+returns date language sql stable set search_path = '' as $$
+  select (now() at time zone 'America/Bogota')::date;
+$$;
+
 -- Perfil de quien llama (null si no tiene acceso o está desactivado)
 create or replace function inventario.yo()
 returns inventario.perfiles language sql stable security definer set search_path = '' as $$
@@ -311,7 +322,7 @@ begin
   insert into inventario.movimientos
     (tipo, fecha, origen_id, destino_id, proveedor_id, metodo_pago_id, curso, moneda, tasa, nota, creado_por)
   values
-    (v_tipo, coalesce(nullif(p->>'fecha', '')::date, current_date), v_o.id, v_d.id, v_prov, v_metodo,
+    (v_tipo, coalesce(nullif(p->>'fecha', '')::date, inventario.hoy()), v_o.id, v_d.id, v_prov, v_metodo,
      case when v_tipo = 'venta' then nullif(trim(p->>'curso'), '') end,
      v_moneda, v_tasa, nullif(trim(p->>'nota'), ''), v_yo.id)
   returning id into v_id;
@@ -350,6 +361,7 @@ begin
 end $$;
 
 -- Todo lo que ve quien llama, en un solo JSON (lo pinta la página). El monitor recibe solo lo suyo y sin costos.
+-- Los productos van todos (también los desactivados): un monitor puede tener uno en la maleta o haberlo vendido.
 create or replace function inventario.datos(v_yo inventario.perfiles)
 returns jsonb language plpgsql stable security definer set search_path = '' as $$
 declare
@@ -364,7 +376,7 @@ begin
       from inventario.paises x), '[]'),
     'perfiles', coalesce((
       select jsonb_agg(jsonb_build_object('id', p.id, 'nombre', p.nombre, 'usuario', p.usuario, 'rol', p.rol,
-               'activo', p.activo, 'creado', p.created_at::date,
+               'activo', p.activo, 'creado', (p.created_at at time zone 'America/Bogota')::date,
                'propio', coalesce(u.raw_app_meta_data->>'sistema', '') = 'inventario') order by p.nombre)
       from inventario.perfiles p join auth.users u on u.id = p.id
       where v_admin or p.id = v_yo.id), '[]'),
@@ -377,7 +389,7 @@ begin
                'stock_minimo', x.stock_minimo, 'activo', x.activo,
                'precios', coalesce((select jsonb_object_agg(r.pais, r.precio) from inventario.precios r where r.producto_id = x.id), '{}'))
              order by x.nombre)
-      from inventario.productos x where v_admin or x.activo), '[]'),
+      from inventario.productos x), '[]'),
     'proveedores', case when v_admin then coalesce((
       select jsonb_agg(jsonb_build_object('id', v.id, 'nombre', v.nombre, 'contacto', v.contacto) order by v.nombre)
       from inventario.proveedores v), '[]') else '[]' end,
@@ -397,7 +409,7 @@ begin
       where v_admin or m.origen_id = v_maleta or m.destino_id = v_maleta), '[]'),
     'pagos', coalesce((
       select jsonb_agg(jsonb_build_object('id', g.id, 'bodega_id', g.bodega_id, 'fecha', g.fecha, 'valor', g.valor, 'moneda', g.moneda,
-               'metodo_pago_id', g.metodo_pago_id, 'nota', g.nota, 'creado_por', coalesce(c.nombre, '')) order by g.id)
+               'metodo_pago_id', g.metodo_pago_id, 'nota', g.nota, 'anulado', g.anulado, 'creado_por', coalesce(c.nombre, '')) order by g.id)
       from inventario.pagos g left join inventario.perfiles c on c.id = g.creado_por
       where v_admin or g.bodega_id = v_maleta), '[]'),
     'stock', coalesce((
@@ -487,7 +499,8 @@ begin
 end $$;
 
 -- Crea o edita productos, bodegas, proveedores, métodos de pago, países y precios (solo admin). p: un objeto o una lista.
--- Con «id» edita; sin «id» crea (productos y bodegas: si ya existe el mismo código / nombre, lo actualiza).
+-- Con «id» edita; sin «id» crea (productos y bodegas: si ya existe el mismo código / nombre, lo actualiza;
+-- con «nuevo»: true —el formulario de crear— avisa en vez de pisar el que ya existe).
 -- productos: {.., precios: {"Colombia": 60000, "Perú": 60}} · precios (carga de Excel): {codigo, pais, precio}
 -- paises: {id = nombre actual (al editar), nombre, moneda, tasa}
 create or replace function public.inv_guardar(p_tabla text, p jsonb)
@@ -509,7 +522,10 @@ begin
     if p_tabla = 'productos' then
       if nullif(trim(v_x->>'nombre'), '') is null then raise exception 'Escribe el nombre del producto.'; end if;
       if nullif(trim(v_x->>'codigo'), '') is null then raise exception 'Escribe el código del producto.'; end if;
-      if v_id is null then select id::text into v_id from inventario.productos where lower(codigo) = lower(trim(v_x->>'codigo')); end if;
+      if v_id is null then
+        select id::text into v_id from inventario.productos where lower(codigo) = lower(trim(v_x->>'codigo'));
+        if v_id is not null and coalesce((v_x->>'nuevo')::boolean, false) then raise exception 'Ya hay un producto con el código %.', trim(v_x->>'codigo'); end if;
+      end if;
       if exists (select 1 from inventario.productos where lower(codigo) = lower(trim(v_x->>'codigo')) and id::text is distinct from v_id) then
         raise exception 'Ya hay un producto con el código %.', trim(v_x->>'codigo');
       end if;
@@ -562,6 +578,10 @@ begin
       if v_id is null then
         if nullif(trim(v_x->>'nombre'), '') is null then raise exception 'Escribe el nombre de la bodega.'; end if;
         select id::text into v_id from inventario.bodegas where tipo = 'bodega' and lower(nombre) = lower(trim(v_x->>'nombre'));
+        if v_id is not null and coalesce((v_x->>'nuevo')::boolean, false) then raise exception 'Ya existe una bodega con ese nombre.'; end if;
+      elsif nullif(trim(v_x->>'nombre'), '') is not null and exists (select 1 from inventario.bodegas
+              where tipo = 'bodega' and lower(nombre) = lower(trim(v_x->>'nombre')) and id::text <> v_id) then
+        raise exception 'Ya existe una bodega con ese nombre.';
       end if;
       if v_x ? 'activa' and not (v_x->>'activa')::boolean and exists (select 1 from inventario.stock where bodega_id = v_id::uuid) then
         raise exception '% todavía tiene mercancía. Trasládala antes de desactivarla.', (select nombre from inventario.bodegas where id = v_id::uuid);
@@ -633,9 +653,19 @@ declare
 begin
   if v_mon is null then raise exception 'Elige el monitor.'; end if;
   if coalesce(nullif(p->>'valor', '')::numeric, 0) <= 0 then raise exception 'Escribe el valor recibido.'; end if;
-  insert into inventario.pagos (bodega_id, valor, moneda, metodo_pago_id, nota, creado_por)
-  values ((p->>'bodega_id')::uuid, (p->>'valor')::numeric, v_mon, nullif(p->>'metodo_pago_id', '')::smallint,
-          nullif(trim(p->>'nota'), ''), v_yo.id);
+  insert into inventario.pagos (bodega_id, fecha, valor, moneda, metodo_pago_id, nota, creado_por)
+  values ((p->>'bodega_id')::uuid, coalesce(nullif(p->>'fecha', '')::date, inventario.hoy()), (p->>'valor')::numeric, v_mon,
+          nullif(p->>'metodo_pago_id', '')::smallint, nullif(trim(p->>'nota'), ''), v_yo.id);
+  return jsonb_build_object('datos', inventario.datos(v_yo));
+end $$;
+
+-- Anula un pago mal registrado (solo admin). Deja de contar; el registro queda.
+create or replace function public.inv_pago_anular(p_id bigint)
+returns jsonb language plpgsql security definer set search_path = '' as $$
+declare v_yo inventario.perfiles := inventario.exigir(array['superadmin','admin']);
+begin
+  update inventario.pagos set anulado = true, anulado_por = v_yo.id, anulado_en = now() where id = p_id and not anulado;
+  if not found then raise exception 'Ese pago no existe o ya está anulado.'; end if;
   return jsonb_build_object('datos', inventario.datos(v_yo));
 end $$;
 

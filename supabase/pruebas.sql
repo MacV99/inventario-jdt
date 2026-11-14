@@ -58,6 +58,13 @@ select public.inv_guardar('productos', '{"codigo":"LIB-001","nombre":"Libro Mét
 reset role;
 select t_ok((select count(*) = 2 from inventario.productos), 'el código repetido actualiza, no duplica');
 select t_ok((select nombre = 'Libro Método JDT' from inventario.productos where codigo = 'LIB-001'), 'nombre actualizado');
+-- desde el formulario de crear (nuevo): avisa en vez de pisar el que ya existe
+set role authenticated;
+select t_espera_error($q$select public.inv_guardar('productos', '{"nuevo":true,"codigo":"lib-001","nombre":"Otro"}')$q$, 'Ya hay un producto');
+select t_espera_error($q$select public.inv_guardar('bodegas', '{"nuevo":true,"nombre":"bodega lima","ciudad":"Cusco","pais":"Perú"}')$q$, 'Ya existe una bodega');
+select t_espera_error(format($q$select public.inv_guardar('bodegas', '{"id":"%s","nombre":"Bodega Bogotá"}')$q$, (select id from inventario.bodegas where nombre = 'Bodega Lima')), 'Ya existe una bodega');
+reset role;
+select t_ok((select ciudad = 'Lima' from inventario.bodegas where nombre = 'Bodega Lima'), 'crear con un nombre repetido no pisa la bodega');
 
 -- 4. Compras: costo promedio (una en USD)
 set role authenticated;
@@ -175,6 +182,8 @@ select t_espera_error($q$select public.inv_guardar('paises', '{"id":"Colombia","
 reset role;
 select t_ok((select moneda = 'PEN' and tasa = 1100 from inventario.movimientos where tipo='venta' and origen_id = (select id from inventario.bodegas where nombre='Bodega Lima')), 'venta en Perú va en soles con su tasa');
 select t_ok((select moneda = 'PEN' from inventario.pagos), 'el dinero del monitor de Perú va en soles');
+select t_ok((select fecha = (now() at time zone 'America/Bogota')::date from inventario.pagos), 'el pago queda con la fecha de Colombia');
+select t_ok((select bool_and(fecha = (now() at time zone 'America/Bogota')::date) from inventario.movimientos where origen_id = (select id from inventario.bodegas where nombre='Bodega Lima')), 'la venta sin fecha queda con la de Colombia');
 select t_ok((select count(*) = 2 from inventario.bodegas where pais = 'Peru') and exists (select 1 from inventario.precios where pais = 'Peru'), 'renombrar el país cambia bodegas y precios');
 select t_ok((select tasa = 1 from inventario.paises where nombre = 'Colombia'), 'el peso siempre vale 1');
 
@@ -227,5 +236,21 @@ select t_espera_error(format($q$select public.inv_registrar('{"tipo":"entre_male
 select t_espera_error(format($q$select public.inv_registrar('{"tipo":"entre_maletas","origen_id":"%s","destino_id":"%s","items":[{"producto_id":"%s","cantidad":1}]}')$q$,
   (select id from inventario.bodegas where nombre='Bodega Bogotá'), (select id from inventario.bodegas where nombre='Maleta Jheiner P'), (select id from inventario.productos where codigo='LIB-001')), 'no corresponden');
 select t_ok(true, 'entre maletas: no a la misma ni desde una bodega');
+
+-- 18. Un pago mal escrito se anula y deja de contar
+select public.inv_pago_anular((select (p->>'id')::bigint from jsonb_array_elements(public.inv_datos()->'pagos') p limit 1));
+select t_ok((select (p->>'anulado')::boolean from jsonb_array_elements(public.inv_datos()->'pagos') p limit 1), 'pago anulado');
+select t_espera_error($q$select public.inv_pago_anular(1)$q$, 'ya está anulado');
+select t_espera_error($q$select public.inv_pago_anular(999)$q$, 'ya está anulado');
+
+-- 19. El monitor recibe también los productos desactivados (puede tener uno en la maleta)
+select public.inv_guardar('productos', (select jsonb_build_object('id', p->>'id', 'codigo', p->>'codigo', 'nombre', p->>'nombre', 'activo', false)
+  from jsonb_array_elements(public.inv_datos()->'productos') p where p->>'codigo' = 'KIT-001'));
+reset role;
+select set_config('request.jwt.claim.sub', (select id::text from inventario.perfiles where rol = 'monitor' and activo limit 1), false);
+set role authenticated;
+select t_ok(exists (select 1 from jsonb_array_elements(public.inv_datos()->'productos') p where p->>'codigo' = 'KIT-001'), 'el monitor ve el producto desactivado');
+select t_espera_error($q$select public.inv_pago_anular(1)$q$, 'No tienes permiso');
+reset role;
 
 \echo TODAS LAS PRUEBAS PASARON

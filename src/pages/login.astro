@@ -51,7 +51,9 @@ import PasswordInput from "../components/ui/PasswordInput.astro";
     errorBox.hidden = !msg;
   };
 
-  const volver = new URLSearchParams(location.search).get("volver") ?? "";
+  // Solo direcciones de esta misma página ("/algo"); nunca otra página de internet ("//otra.com")
+  const pedido = new URLSearchParams(location.search).get("volver") ?? "";
+  const volver = /^\/(?![/\\])/.test(pedido) ? pedido : "";
   const destino = (rol: string) => (rol === "monitor" ? (volver.startsWith("/mi") ? volver : "/mi-maleta") : volver.startsWith("/") && !volver.startsWith("/mi") && !volver.startsWith("/login") ? volver : "/");
 
   // Por qué lo sacaron (sin acceso o desactivado)

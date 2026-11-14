@@ -66,7 +66,7 @@ import FormError from "../components/ui/FormError.astro";
     </div>
     <div class="table-wrap" data-panel="pagos" hidden>
       <table class="table">
-        <thead><tr><th>Fecha</th><th>Nota</th><th>Recibió</th><th class="num">Valor</th></tr></thead>
+        <thead><tr><th>Fecha</th><th>Nota</th><th>Recibió</th><th class="num">Valor</th><th></th></tr></thead>
         <tbody data-m-pagos></tbody>
       </table>
     </div>
@@ -99,7 +99,7 @@ import FormError from "../components/ui/FormError.astro";
   import "../lib/ui";
   import { initTableFilter } from "../lib/ui/table-filter";
   import { setKpi } from "../lib/ui/kpi";
-  import { cuadre, stockFilas, bodega, producto, ventas, pagos, totalLocal, registrarPago, metodosDe, monedaDe, precioEn } from "../lib/store";
+  import { cuadre, stockFilas, bodega, producto, ventas, pagos, totalLocal, registrarPago, anularPago, metodosDe, monedaDe, precioEn } from "../lib/store";
   import { money, num, day, esc, searchText, menu, avatar, intentar, parseNum, flashRow, dsSelect } from "../lib/view";
 
   const scope = document.querySelector<HTMLElement>("[data-table]")!;
@@ -141,7 +141,9 @@ import FormError from "../components/ui/FormError.astro";
 
   // ── Maleta, ventas y pagos de un monitor ──
   const esto = (rows: string[], cols: number, vacio: string) => rows.join("") || `<tr><td colspan="${cols}" class="muted">${vacio}</td></tr>`;
-  function verMaleta(id: string) {
+  let maletaActual = "";
+  function verMaleta(id: string, tab = "tiene") {
+    maletaActual = id;
     const m = document.getElementById("maleta-modal")!;
     m.querySelector("[data-modal-title]")!.textContent = `Maleta de ${nombre(id)}`;
     const b = bodega(id)!;
@@ -163,15 +165,33 @@ import FormError from "../components/ui/FormError.astro";
     m.querySelector("[data-m-pagos]")!.innerHTML = esto(
       pagos()
         .filter((p) => p.bodega_id === id)
-        .map((p) => `<tr><td class="nowrap">${day(p.fecha)}</td><td>${esc(p.nota ?? "—")}</td><td>${esc(p.creado_por)}</td><td class="num tnum">${money(p.valor, p.moneda)}</td></tr>`),
-      4,
+        .map(
+          (p) => `<tr class="${p.anulado ? "anulado" : ""}"><td class="nowrap">${day(p.fecha)}</td><td>${esc(p.nota ?? "—")}${p.anulado ? ' <span class="badge danger">Anulado</span>' : ""}</td><td>${esc(p.creado_por)}</td><td class="num tnum">${money(p.valor, p.moneda)}</td>
+            <td class="cell-actions">${p.anulado ? "" : `<button type="button" class="btn btn-subtle btn-icon btn-sm" data-anular-pago="${p.id}" data-valor="${esc(money(p.valor, p.moneda))}" aria-label="Anular este pago" title="Anular"><i class="bi bi-x-circle" aria-hidden="true"></i></button>`}</td></tr>`,
+        ),
+      5,
       "Todavía no ha entregado dinero.",
     );
     // Siempre abre en «Tiene» (sin tocar la dirección)
-    m.querySelectorAll<HTMLElement>("[data-tab]").forEach((t) => t.setAttribute("aria-selected", String(t.dataset.tab === "tiene")));
-    m.querySelectorAll<HTMLElement>("[data-panel]").forEach((p) => (p.hidden = p.dataset.panel !== "tiene"));
+    m.querySelectorAll<HTMLElement>("[data-tab]").forEach((t) => t.setAttribute("aria-selected", String(t.dataset.tab === tab)));
+    m.querySelectorAll<HTMLElement>("[data-panel]").forEach((p) => (p.hidden = p.dataset.panel !== tab));
     window.ui.openModal("maleta-modal");
   }
+
+  // Dinero mal registrado: se anula (deja de contar, el registro queda)
+  document.getElementById("maleta-modal")!.addEventListener("click", async (e) => {
+    const btn = (e.target as HTMLElement).closest<HTMLElement>("[data-anular-pago]");
+    if (!btn) return;
+    const ok = await window.ui.confirm({
+      tone: "danger",
+      title: `¿Anular el pago de ${btn.dataset.valor}?`,
+      message: "Deja de contar como dinero entregado. Queda en la lista marcado como anulado.",
+      confirmText: "Anular",
+    });
+    if (!ok || !(await intentar(null, () => anularPago(Number(btn.dataset.anularPago)), "Pago anulado"))) return;
+    render();
+    verMaleta(maletaActual, "pagos");
+  });
 
   // ── Dinero recibido ──
   const dinero = document.getElementById("dinero-modal")!;

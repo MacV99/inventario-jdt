@@ -73,14 +73,18 @@ export async function salir() {
 }
 
 let renovando: Promise<Sesion | null> | null = null;
-/** Token vigente (lo renueva si le falta menos de 1 minuto). */
+/** Token vigente (lo renueva si le falta menos de 1 minuto). Sin internet avisa, pero no cierra la sesión. */
 async function token() {
   const s = leer();
   if (!s) return null;
   if (s.expires_at - 60 > Date.now() / 1000) return s.access_token;
   renovando ??= auth("token?grant_type=refresh_token", { refresh_token: s.refresh_token })
     .then((n) => (guardar(n), n))
-    .catch(() => (guardar(null), null))
+    .catch((e: { status?: number }) => {
+      // Solo se cierra la sesión si el servidor la rechazó; si no hubo conexión, se conserva para reintentar
+      if (e.status && e.status < 500) return guardar(null), null;
+      throw new Error("No hay conexión. Revisa el internet e intenta de nuevo.");
+    })
     .finally(() => (renovando = null));
   return (await renovando)?.access_token ?? null;
 }

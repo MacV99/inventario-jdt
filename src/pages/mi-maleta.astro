@@ -137,7 +137,7 @@ import FormError from "../components/ui/FormError.astro";
   import "../lib/ui";
   import { setKpi } from "../lib/ui/kpi";
   import { stockFilas, maletaDe, producto, cuadre, ventas, registrarMovimiento, metodosDe, yo, monedaDe, precioEn } from "../lib/store";
-  import { money, num, esc, intentar, dsSelect, parseNum, sinNuevo } from "../lib/view";
+  import { money, num, esc, intentar, dsSelect, parseNum, sinNuevo, today } from "../lib/view";
 
   const maleta = maletaDe(yo().id) ?? { id: "", ciudad: "", pais: "" };
   // Vende en la moneda de su país, con los precios de su país
@@ -145,7 +145,7 @@ import FormError from "../components/ui/FormError.astro";
   const plata = (n: number) => money(n, moneda);
   const body = document.querySelector<HTMLElement>("[data-body]")!;
   const kpis = document.querySelector<HTMLElement>("[data-kpis]")!;
-  const mias = () => stockFilas().filter((f) => f.bodega_id === maleta.id).map((f) => ({ ...f, p: producto(f.producto_id)! }));
+  const mias = () => stockFilas().filter((f) => f.bodega_id === maleta.id).map((f) => ({ ...f, p: producto(f.producto_id) ?? { id: f.producto_id, nombre: "Producto", codigo: "" } }));
 
   function render() {
     const items = mias();
@@ -233,6 +233,7 @@ import FormError from "../components/ui/FormError.astro";
       if (!metodo.value) throw new Error("Elige cómo pagó el cliente.");
       const mov = await registrarMovimiento({
         tipo: "venta",
+        fecha: today(), // la del celular (la base trabaja en otra hora)
         origen_id: maleta.id,
         curso: sinNuevo(curso.value),
         metodo_pago_id: Number(metodo.value),

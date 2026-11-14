@@ -41,7 +41,7 @@ export interface Movimiento {
   items: Item[];
 }
 /** Dinero que un monitor entrega de sus ventas. */
-export interface Pago { id: number; bodega_id: string; fecha: string; valor: number; moneda: string; metodo_pago_id?: number | null; nota?: string | null; creado_por: string }
+export interface Pago { id: number; bodega_id: string; fecha: string; valor: number; moneda: string; metodo_pago_id?: number | null; nota?: string | null; anulado?: boolean; creado_por: string }
 export interface Yo { id: string; nombre: string; usuario: string; rol: Rol }
 
 interface State {
@@ -165,7 +165,17 @@ async function iniciar() {
       cache = guardado;
       // Revisa por detrás: si alguien más cambió algo, se repinta con lo nuevo
       fresco.then((d) => {
-        if (d instanceof Error) return;
+        if (d instanceof Error) {
+          // Le quitaron el acceso: no sigue viendo lo que quedó guardado en este navegador
+          if (/acceso/.test(d.message)) {
+            try {
+              localStorage.removeItem(KEY_CACHE);
+              sessionStorage.setItem("jdt-inv-motivo", d.message);
+            } catch {}
+            aEntrar();
+          }
+          return;
+        }
         if (JSON.stringify({ version: VERSION, ...d }) === JSON.stringify(guardado)) return;
         usar(d);
         irA();
@@ -427,7 +437,7 @@ export function cuadre() {
       // Si algo quedó en otra moneda (le cambiaron el país), se pasa a la de ahora
       const vendido = mias.reduce((a, v) => a + (v.moneda === moneda ? totalLocal(v) : totalMov(v) / tasa), 0);
       const entregado = load()
-        .pagos.filter((p) => p.bodega_id === b.id)
+        .pagos.filter((p) => p.bodega_id === b.id && !p.anulado)
         .reduce((a, p) => a + (p.moneda === moneda ? p.valor : (p.valor * (tasaDe(p.moneda) || 1)) / tasa), 0);
       const debe = vendido - entregado;
       return {
@@ -608,7 +618,8 @@ type TablaGuardable = "productos" | "bodegas" | "proveedores" | "metodos_pago" |
 const guardarBase = async (tabla: TablaGuardable, p: unknown) => (await llamar("inv_guardar", { p_tabla: tabla, p })).ids!.map(String);
 
 /** precios: solo los países que cambian (0 = quitar el precio). */
-type ProductoIn = Omit<Producto, "id" | "activo" | "precios"> & { id?: string; precios?: Record<string, number> };
+/** nuevo: viene del formulario de crear (si el código ya existe, avisa en vez de pisar el que hay). */
+type ProductoIn = Omit<Producto, "id" | "activo" | "precios"> & { id?: string; precios?: Record<string, number>; nuevo?: boolean };
 function preciosLocal(old: Record<string, number>, nuevos: Record<string, number> = {}) {
   const r = { ...old };
   for (const [p, v] of Object.entries(nuevos)) {
@@ -619,12 +630,12 @@ function preciosLocal(old: Record<string, number>, nuevos: Record<string, number
   }
   return r;
 }
-function productoLocal(p: ProductoIn) {
+function productoLocal({ nuevo, ...p }: ProductoIn) {
   const s = load();
   if (!p.nombre.trim()) throw new Error("Escribe el nombre del producto.");
   if (!p.codigo.trim()) throw new Error("Escribe el código del producto.");
   const old = s.productos.find((x) => x.id === p.id) ?? (p.id ? undefined : s.productos.find((x) => llave(x.codigo) === llave(p.codigo)));
-  if (s.productos.some((x) => llave(x.codigo) === llave(p.codigo) && x.id !== old?.id)) throw new Error(`Ya hay un producto con el código ${p.codigo.trim()}.`);
+  if ((nuevo && old) || s.productos.some((x) => llave(x.codigo) === llave(p.codigo) && x.id !== old?.id)) throw new Error(`Ya hay un producto con el código ${p.codigo.trim()}.`);
   const id = old?.id ?? nuevoId("p", s.productos);
   const precios = preciosLocal(old?.precios ?? {}, p.precios);
   if (old) Object.assign(old, { ...p, id, nombre: p.nombre.trim(), codigo: p.codigo.trim(), precios });
@@ -639,11 +650,12 @@ export async function guardarProducto(p: ProductoIn) {
   return id;
 }
 
-type BodegaIn = { id?: string; nombre: string; ciudad: string; pais: string };
+type BodegaIn = { id?: string; nombre: string; ciudad: string; pais: string; nuevo?: boolean };
 function bodegaLocal(b: BodegaIn) {
   const s = load();
   if (!b.nombre.trim()) throw new Error("Escribe el nombre de la bodega.");
   const old = s.bodegas.find((x) => x.id === b.id) ?? (b.id ? undefined : s.bodegas.find((x) => x.tipo === "bodega" && llave(x.nombre) === llave(b.nombre)));
+  if ((b.nuevo && old) || s.bodegas.some((x) => x.tipo === "bodega" && llave(x.nombre) === llave(b.nombre) && x.id !== old?.id)) throw new Error("Ya existe una bodega con ese nombre.");
   if (!old && (!b.ciudad.trim() || !b.pais.trim())) throw new Error("Elige la ciudad y el país.");
   if (b.pais.trim() && !pais(b.pais.trim())) throw new Error(`El país «${b.pais.trim()}» no está en Países y monedas.`);
   const id = old?.id ?? nuevoId("b", s.bodegas.filter((x) => x.tipo === "bodega"));
@@ -765,7 +777,7 @@ export async function cambiarUsuario(c: { id: string; rol?: "admin" | "monitor";
 
 export async function registrarPago(bodegaId: string, valor: number, nota: string, metodo_pago_id?: number) {
   if (!(valor > 0)) throw new Error("Escribe el valor recibido.");
-  if (!DEMO) return void (await llamar("inv_pago", { p: { bodega_id: bodegaId, valor, nota, metodo_pago_id } }));
+  if (!DEMO) return void (await llamar("inv_pago", { p: { bodega_id: bodegaId, valor, nota, metodo_pago_id, fecha: hoy() } }));
   const s = load();
   s.pagos.push({ id: Math.max(0, ...s.pagos.map((p) => p.id)) + 1, bodega_id: bodegaId, fecha: hoy(), valor, moneda: monedaDe(bodega(bodegaId)).moneda, metodo_pago_id, nota: nota.trim() || undefined, creado_por: yo().nombre });
   saveDemo();
@@ -773,6 +785,15 @@ export async function registrarPago(bodegaId: string, valor: number, nota: strin
 
 /** Texto para comparar sin mayúsculas ni tildes ("Bogotá" = "bogota"). */
 export const llave = (s: string) => s.normalize("NFD").replace(/[̀-ͯ]/g, "").trim().toLowerCase();
+
+/** Anula un pago mal registrado: deja de contar, el registro queda. */
+export async function anularPago(id: number) {
+  if (!DEMO) return void (await llamar("inv_pago_anular", { p_id: id }));
+  const p = load().pagos.find((x) => x.id === id);
+  if (!p || p.anulado) throw new Error("Ese pago no existe o ya está anulado.");
+  p.anulado = true;
+  saveDemo();
+}
 
 // ── Datos de ejemplo (solo prueba local) ─────────────────────────────
 // Datos de ejemplo con los países y productos reales de JDT (2026-11-11). Cantidades inventadas; compras sin costo.

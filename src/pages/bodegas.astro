@@ -133,7 +133,7 @@ import FormError from "../components/ui/FormError.astro";
     let id = "";
     const ok = await intentar(
       form,
-      async () => (id = await guardarBodega({ id: editando || undefined, nombre: nombre.value.trim(), ciudad: texto(ciudad.value), pais: pais.value })),
+      async () => (id = await guardarBodega({ id: editando || undefined, nuevo: !editando, nombre: nombre.value.trim(), ciudad: texto(ciudad.value), pais: pais.value })),
       editando ? "Bodega actualizada" : "Bodega creada",
     );
     if (!ok) return;

@@ -201,7 +201,9 @@ import StatCard from "../components/ui/StatCard.astro";
     )
     .join("");
 
-  // Por agotarse: en cada bodega, lo que está bajo el mínimo del producto (también lo que ya no hay)
+  // Por agotarse: en cada bodega, lo que está bajo el mínimo del producto. También lo que ya se acabó,
+  // pero solo donde alguna vez hubo (una bodega que nunca manejó ese producto no avisa).
+  const hubo = new Set(movimientos().filter((m) => !m.anulado && m.destino_id).flatMap((m) => m.items.map((i) => `${m.destino_id}|${i.producto_id}`)));
   const low = bodegas()
     .filter((b) => b.tipo === "bodega" && b.activa)
     .flatMap((b) =>
@@ -209,7 +211,7 @@ import StatCard from "../components/ui/StatCard.astro";
         .filter((p) => p.activo)
         .map((p) => ({ b, p, cantidad: filas.find((f) => f.bodega_id === b.id && f.producto_id === p.id)?.cantidad ?? 0 })),
     )
-    .filter((x) => x.cantidad < x.p.stock_minimo && x.cantidad > 0)
+    .filter((x) => x.cantidad < x.p.stock_minimo && (x.cantidad > 0 || hubo.has(`${x.b.id}|${x.p.id}`)))
     .sort((a, b) => a.cantidad / a.p.stock_minimo - b.cantidad / b.p.stock_minimo);
   document.querySelector("[data-low]")!.innerHTML = low
     .map(

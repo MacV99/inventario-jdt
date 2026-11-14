@@ -221,6 +221,7 @@ import FormError from "../components/ui/FormError.astro";
       async () =>
         (id = await guardarProducto({
           id: editando || undefined,
+          nuevo: !editando,
           nombre: field("nombre").value,
           codigo: field("codigo").value,
           unidad: sinNuevo(unidad.value).trim() || "und",
