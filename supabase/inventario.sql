@@ -718,8 +718,9 @@ begin
   end if;
   if v_user !~ '^[a-z0-9._-]{3,30}$' then raise exception 'Usuario: de 3 a 30 letras o números, sin espacios ni tildes.'; end if;
   if length(v_nom) < 3 then raise exception 'Escribe nombre y apellido.'; end if;
-  if v_rol = 'monitor' and not exists (select 1 from inventario.paises where nombre = trim(coalesce(p->>'pais', ''))) then
-    raise exception 'Elige el país de su maleta.';
+  -- El monitor se crea sin país ni ciudad fijos: su maleta se le da después (o aquí, si viene el país)
+  if nullif(trim(p->>'pais'), '') is not null and not exists (select 1 from inventario.paises where nombre = trim(p->>'pais')) then
+    raise exception 'El país «%» no está en Países y monedas.', trim(p->>'pais');
   end if;
   v_mail := v_user || '@jdt.local';
 
@@ -748,7 +749,7 @@ begin
 
   insert into inventario.perfiles (id, usuario, nombre, rol, bodega_id, clave)
   values (v_uid, v_user, v_nom, v_rol, v_bod, case when not v_ya then v_pass end);
-  if v_rol = 'monitor' then
+  if v_rol = 'monitor' and nullif(trim(p->>'pais'), '') is not null then
     insert into inventario.bodegas (nombre, ciudad, pais, tipo, monitor_id)
     values ('Maleta ' || v_nom, coalesce(trim(p->>'ciudad'), ''), trim(p->>'pais'), 'monitor', v_uid);
   end if;
@@ -802,9 +803,11 @@ begin
     raise exception 'El país «%» no está en Países y monedas.', trim(p->>'pais');
   end if;
   if v_per.rol = 'monitor' and not exists (select 1 from inventario.bodegas where monitor_id = v_per.id) then
-    if nullif(trim(p->>'pais'), '') is null then raise exception 'Elige el país de su maleta.'; end if;
+    -- sin maleta todavía: se le da cuando llega el país
+    if nullif(trim(p->>'pais'), '') is not null then
     insert into inventario.bodegas (nombre, ciudad, pais, tipo, monitor_id)
     values ('Maleta ' || v_per.nombre, coalesce(trim(p->>'ciudad'), ''), trim(p->>'pais'), 'monitor', v_per.id);
+    end if;
   else
     -- cambia la ciudad o el país de su maleta (sus ventas nuevas van en la moneda del país nuevo)
     update inventario.bodegas set

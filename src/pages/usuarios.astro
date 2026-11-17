@@ -61,15 +61,6 @@ import CrearRapido from "../components/app/CrearRapido.astro";
         <Select name="bodega" searchable creatable createLabel="Crear bodega" placeholder="Elegir bodega" options={[]} />
       </div>
       <p class="muted small span-2" data-bodega>Ve y mueve solo la mercancía de esa bodega.</p>
-      <div class="field" data-maleta>
-        <span class="label">País</span>
-        <Select name="pais" searchable creatable createLabel="Crear país" placeholder="Elegir país" options={[]} />
-      </div>
-      <div class="field" data-maleta>
-        <span class="label">Ciudad</span>
-        <Select name="ciudad" searchable creatable createLabel="Crear ciudad" placeholder="Elegir ciudad" options={[]} />
-      </div>
-      <p class="muted small span-2" data-maleta>Se le crea su maleta en esa ciudad. Vende en la moneda y con los precios de su país.</p>
     </form>
     <button slot="footer" type="button" class="btn btn-ghost" data-modal-close>Cancelar</button>
     <button slot="footer" type="button" class="btn btn-primary" data-save>Crear</button>
@@ -150,7 +141,7 @@ import CrearRapido from "../components/app/CrearRapido.astro";
       ...(p.propio ? [{ value: "clave", label: "Ver usuario y contraseña", icon: "bi-key" }] : []),
       ...(p.rol === "bodeguero" ? [{ value: "bodega", label: "Cambiar bodega", icon: "bi-building" }, { value: "ver-bodega", label: "Ver su bodega", icon: "bi-box-seam" }] : []),
       ...(maletaDe(p.id) ? [{ value: "maleta", label: "Ver su maleta", icon: "bi-briefcase" }] : []),
-      ...(p.rol === "monitor" && maletaDe(p.id) ? [{ value: "lugar", label: "Cambiar ciudad o país", icon: "bi-geo-alt" }] : []),
+      ...(p.rol === "monitor" ? [maletaDe(p.id) ? { value: "lugar", label: "Cambiar ciudad o país", icon: "bi-geo-alt" } : { value: "lugar", label: "Darle su maleta", icon: "bi-briefcase" }] : []),
       { separator: true },
       { value: "desactivar", label: "Desactivar", icon: "bi-slash-circle", danger: true },
     ];
@@ -160,7 +151,7 @@ import CrearRapido from "../components/app/CrearRapido.astro";
     const ps = perfiles();
     body.innerHTML = ps
       .map((p) => {
-        const suya = p.rol === "bodeguero" ? bodega(p.bodega_id)?.nombre : "";
+        const suya = p.rol === "bodeguero" ? bodega(p.bodega_id)?.nombre : p.rol === "monitor" && !maletaDe(p.id) ? "Sin maleta todavía" : "";
         const rol = !p.activo ? '<span class="badge">Desactivado</span>' : `${ROL[p.rol].label}${suya ? `<p class="sub">${esc(suya)}</p>` : ""}`;
         const a = acciones(p);
         const cc = p.propio ? "" : ' <span class="muted small" data-tip="Entra con su misma cuenta del call center">· call center</span>';
@@ -183,8 +174,6 @@ import CrearRapido from "../components/app/CrearRapido.astro";
   const form = modal.querySelector<HTMLFormElement>("[data-form]")!;
   const field = (n: string) => form.querySelector<HTMLInputElement>(`[name=${n}]`)!;
   const rol = dsSelect(form, "ds-select[name=rol]");
-  const pais = dsSelect(form, "ds-select[name=pais]");
-  const ciudad = dsSelect(form, "ds-select[name=ciudad]");
   const bod = dsSelect(form, "ds-select[name=bodega]");
   rol.setOptions(ROLES.map(({ value, label }) => ({ value, label })));
   // Países: los de Países y monedas. Ciudades: las que ya hay en ese país (o una nueva)
@@ -192,26 +181,17 @@ import CrearRapido from "../components/app/CrearRapido.astro";
     pais.setOptions(paises().map((x) => ({ value: x.nombre, label: x.nombre, hint: x.moneda })));
     ciudad.setOptions(uniqueOptions(todasBodegas().filter((b) => !pais.value || b.pais === pais.value).map((b) => b.ciudad)));
   };
-  const opciones = () => opcionesLugar(pais, ciudad);
-  const verMaleta = () => {
-    form.querySelectorAll<HTMLElement>("[data-maleta]").forEach((el) => (el.hidden = rol.value !== "monitor"));
-    form.querySelectorAll<HTMLElement>("[data-bodega]").forEach((el) => (el.hidden = rol.value !== "bodeguero"));
-  };
-  pais.addEventListener("change", opciones);
-  conCrearPais(pais, opciones);
+  const verBodega = () => form.querySelectorAll<HTMLElement>("[data-bodega]").forEach((el) => (el.hidden = rol.value !== "bodeguero"));
   conCrearBodega(bod, () => bod.setOptions(opcionesBodega()));
-  rol.addEventListener("change", verMaleta);
+  rol.addEventListener("change", verBodega);
 
   document.querySelector("[data-new]")!.addEventListener("click", () => {
     intentar(form, () => {});
     form.reset();
     rol.value = "monitor";
-    pais.value = "";
-    ciudad.value = "";
     bod.setOptions(opcionesBodega());
     bod.value = "";
-    opciones();
-    verMaleta();
+    verBodega();
     window.ui.openModal("user-modal");
     field("nombre").focus();
   });
@@ -223,15 +203,12 @@ import CrearRapido from "../components/app/CrearRapido.astro";
     const password = claveFacil();
     const ok = await intentar(form, async () => {
       if (nombre.split(" ").length < 2) throw new Error("Escribe nombre y apellido.");
-      if (rol.value === "monitor" && (!pais.value || !ciudad.value)) throw new Error("Elige el país y la ciudad de su maleta.");
       if (rol.value === "bodeguero" && !bod.value) throw new Error("Elige la bodega a su cargo.");
       ({ existente } = await crearUsuario({
         nombre,
         usuario,
         password,
         rol: rol.value as RolUs,
-        ciudad: texto(ciudad.value),
-        pais: pais.value,
         bodega_id: rol.value === "bodeguero" ? bod.value : undefined,
       }));
     });
@@ -350,8 +327,8 @@ import CrearRapido from "../components/app/CrearRapido.astro";
     const { value } = (e as CustomEvent<{ value: string }>).detail;
     if (value === "maleta") return void (location.href = `/inventario?ubicacion=${maletaDe(id)!.id}`);
     if (value === "ver-bodega") return void (location.href = `/inventario?ubicacion=${p.bodega_id}`);
-    // Pasar a monitor a alguien sin maleta, o cambiar la ciudad de su maleta: se pregunta dónde
-    if (value === "lugar" || (value === "rol-monitor" && !maletaDe(id))) return abrirLugar(p, value === "rol-monitor");
+    // Darle su maleta o cambiarla de ciudad: se pregunta dónde (pasar a monitor no pide lugar)
+    if (value === "lugar") return abrirLugar(p, false);
     // Pasar a bodeguero o cambiarle la bodega: se pregunta cuál
     if (value === "bodega" || value === "rol-bodeguero") return abrirBodega(p, value === "rol-bodeguero");
     if (value === "clave") return abrirDatos(p);

@@ -788,11 +788,11 @@ export async function crearUsuario(u: NuevoUsuario): Promise<{ existente: boolea
   if (s.perfiles.some((p) => p.usuario === usuario)) throw new Error("Ese usuario ya está en el inventario.");
   if (u.password.length < 6) throw new Error("La contraseña debe tener al menos 6 caracteres.");
   if (yo().rol === "admin" && u.rol === "admin") throw new Error("Solo el superadmin crea admins.");
-  if (u.rol === "monitor" && !pais(u.pais)) throw new Error("Elige el país de su maleta.");
+  if (u.pais && !pais(u.pais)) throw new Error(`El país «${u.pais}» no está en Países y monedas.`);
   if (u.rol === "bodeguero" && !bodegaValida(u.bodega_id)) throw new Error("Elige su bodega.");
   const p: Perfil = { id: nuevoId("u", s.perfiles), nombre: u.nombre.trim(), usuario, rol: u.rol, bodega_id: u.rol === "bodeguero" ? u.bodega_id : null, activo: true, creado: hoy(), propio: true, clave: u.password };
   s.perfiles.push(p);
-  if (u.rol === "monitor") s.bodegas.push({ id: nuevoId("m", s.bodegas.filter((x) => x.tipo === "monitor")), nombre: `Maleta ${p.nombre}`, ciudad: u.ciudad ?? "", pais: u.pais ?? "", tipo: "monitor", monitor_id: p.id, activa: true });
+  if (u.rol === "monitor" && u.pais) s.bodegas.push({ id: nuevoId("m", s.bodegas.filter((x) => x.tipo === "monitor")), nombre: `Maleta ${p.nombre}`, ciudad: u.ciudad ?? "", pais: u.pais ?? "", tipo: "monitor", monitor_id: p.id, activa: true });
   saveDemo();
   return { existente: false };
 }
@@ -820,8 +820,7 @@ export async function cambiarUsuario(c: { id: string; rol?: "admin" | "monitor" 
   if (p.rol === "bodeguero") {
     // sin maleta que cambiar
   } else if (maleta) Object.assign(maleta, { ciudad: c.ciudad || maleta.ciudad, pais: c.pais || maleta.pais });
-  else if (p.rol === "monitor") {
-    if (!c.pais) throw new Error("Elige el país de su maleta.");
+  else if (p.rol === "monitor" && c.pais) {
     s.bodegas.push({ id: nuevoId("m", s.bodegas.filter((x) => x.tipo === "monitor")), nombre: `Maleta ${p.nombre}`, ciudad: c.ciudad ?? "", pais: c.pais, tipo: "monitor", monitor_id: p.id, activa: true });
   }
   saveDemo();

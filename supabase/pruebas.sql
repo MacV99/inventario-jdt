@@ -81,7 +81,10 @@ select t_ok((select cantidad = 20 from inventario.stock), 'stock 20 en Bogotá')
 set role authenticated;
 select public.inv_usuario_crear('{"usuario":"carlos","nombre":"Carlos Rojas","password":"clave-segura","rol":"monitor","ciudad":"Bogotá","pais":"Colombia"}');
 -- jheiner ya existe en el call center: se vincula sin contraseña nueva
-select t_espera_error($q$select public.inv_usuario_crear('{"usuario":"jheiner","nombre":"Jheiner P","rol":"monitor"}')$q$, 'país de su maleta');
+select public.inv_usuario_crear('{"usuario":"sinlugar","nombre":"Sin Lugar","password":"luna47","rol":"monitor"}');
+select t_ok(not exists (select 1 from inventario.bodegas b join inventario.perfiles p on p.id = b.monitor_id where p.usuario = 'sinlugar'), 'monitor nuevo sin país ni ciudad: sin maleta todavía');
+select public.inv_usuario_cambiar(jsonb_build_object('id',(select id from inventario.perfiles where usuario='sinlugar'),'pais','Colombia','ciudad','Cali'));
+select t_ok(exists (select 1 from inventario.bodegas b join inventario.perfiles p on p.id = b.monitor_id where p.usuario = 'sinlugar' and b.ciudad = 'Cali'), 'después se le da su maleta');
 select t_ok((public.inv_usuario_crear('{"usuario":"jheiner","nombre":"Jheiner P","rol":"monitor","ciudad":"Lima","pais":"Perú"}')->>'existente')::boolean, 'usuario del call center se vincula (misma contraseña)');
 select t_espera_error($q$select public.inv_usuario_crear('{"usuario":"leidy","nombre":"Leidy","rol":"admin"}')$q$, 'ya está en el inventario');
 select t_espera_error($q$select public.inv_usuario_crear('{"usuario":"Ana María","nombre":"Ana María","password":"12345678","rol":"monitor","pais":"Colombia"}')$q$, 'sin espacios');
