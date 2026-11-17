@@ -85,7 +85,9 @@ select t_espera_error($q$select public.inv_usuario_crear('{"usuario":"jheiner","
 select t_ok((public.inv_usuario_crear('{"usuario":"jheiner","nombre":"Jheiner P","rol":"monitor","ciudad":"Lima","pais":"Perú"}')->>'existente')::boolean, 'usuario del call center se vincula (misma contraseña)');
 select t_espera_error($q$select public.inv_usuario_crear('{"usuario":"leidy","nombre":"Leidy","rol":"admin"}')$q$, 'ya está en el inventario');
 select t_espera_error($q$select public.inv_usuario_crear('{"usuario":"Ana María","nombre":"Ana María","password":"12345678","rol":"monitor","pais":"Colombia"}')$q$, 'sin espacios');
-select t_espera_error($q$select public.inv_usuario_crear('{"usuario":"ana","nombre":"Ana Díaz","password":"123","rol":"monitor","pais":"Colombia"}')$q$, 'al menos 8');
+select t_espera_error($q$select public.inv_usuario_crear('{"usuario":"ana","nombre":"Ana Díaz","password":"123","rol":"monitor","pais":"Colombia"}')$q$, 'al menos 6');
+select t_ok((select x->>'clave' = 'clave-segura' from jsonb_array_elements(public.inv_datos()->'perfiles') x where x->>'usuario' = 'carlos'), 'el admin ve la contraseña del monitor nuevo');
+select t_ok((select x->>'clave' is null from jsonb_array_elements(public.inv_datos()->'perfiles') x where x->>'usuario' = 'jheiner'), 'la del call center no se ve');
 reset role;
 select t_ok(exists (select 1 from public.profiles where email = 'jheiner@jdt.local'), 'el perfil de jheiner en el call center sigue igual');
 select t_ok((select raw_app_meta_data->>'sistema' = 'inventario' from auth.users where email = 'carlos@jdt.local'), 'carlos queda marcado como del inventario');
@@ -159,6 +161,7 @@ set role authenticated;
 select t_espera_error(format($q$select public.inv_guardar('bodegas', '{"id":"%s","activa":false}')$q$, (select id from inventario.bodegas where nombre='Bodega Bogotá')), 'todavía tiene mercancía');
 -- 14. Contraseñas y acceso
 select public.inv_usuario_cambiar(jsonb_build_object('id',(select id from inventario.perfiles where usuario='carlos'),'password','nueva-clave-9'));
+select t_ok((select x->>'clave' = 'nueva-clave-9' from jsonb_array_elements(public.inv_datos()->'perfiles') x where x->>'usuario' = 'carlos'), 'la contraseña nueva queda a la vista');
 select t_espera_error($q$select public.inv_usuario_cambiar(jsonb_build_object('id','00000000-0000-0000-0000-00000000000b','password','nueva-clave-9'))$q$, 'call center');
 select public.inv_usuario_cambiar(jsonb_build_object('id',(select id from inventario.perfiles where usuario='carlos'),'activo',false));
 reset role;

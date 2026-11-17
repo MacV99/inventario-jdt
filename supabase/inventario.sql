@@ -66,6 +66,8 @@ alter table inventario.perfiles add constraint perfiles_rol_check check (rol in 
 alter table inventario.perfiles add column if not exists bodega_id uuid references inventario.bodegas(id);
 alter table inventario.perfiles drop constraint if exists perfiles_bodeguero_bodega;
 alter table inventario.perfiles add constraint perfiles_bodeguero_bodega check ((rol = 'bodeguero') = (bodega_id is not null));
+-- Contraseña a la vista del admin (2026-11-17): se genera corta y fácil al crear el usuario para que Leidy la comparta.
+alter table inventario.perfiles add column if not exists clave text;
 
 create table if not exists inventario.productos (
   id           uuid primary key default gen_random_uuid(),
@@ -398,7 +400,8 @@ begin
     'perfiles', coalesce((
       select jsonb_agg(jsonb_build_object('id', p.id, 'nombre', p.nombre, 'usuario', p.usuario, 'rol', p.rol, 'bodega_id', p.bodega_id,
                'activo', p.activo, 'creado', (p.created_at at time zone 'America/Bogota')::date,
-               'propio', coalesce(u.raw_app_meta_data->>'sistema', '') = 'inventario') order by p.nombre)
+               'propio', coalesce(u.raw_app_meta_data->>'sistema', '') = 'inventario',
+               'clave', case when v_yo.rol = 'superadmin' or (v_admin and p.rol in ('monitor','bodeguero')) then p.clave end) order by p.nombre)
       from inventario.perfiles p join auth.users u on u.id = p.id
       where v_admin or p.id = v_yo.id), '[]'),
     'bodegas', coalesce((
@@ -725,7 +728,7 @@ begin
     if exists (select 1 from inventario.perfiles where id = v_uid) then raise exception 'Ese usuario ya está en el inventario.'; end if;
     v_ya := true;
   else
-    if length(v_pass) < 8 then raise exception 'La contraseña debe tener al menos 8 caracteres.'; end if;
+    if length(v_pass) < 6 then raise exception 'La contraseña debe tener al menos 6 caracteres.'; end if;
     v_uid := gen_random_uuid();
     insert into auth.users (instance_id, id, aud, role, email, encrypted_password, email_confirmed_at,
                             raw_app_meta_data, raw_user_meta_data, created_at, updated_at,
@@ -743,7 +746,8 @@ begin
     end if;
   end if;
 
-  insert into inventario.perfiles (id, usuario, nombre, rol, bodega_id) values (v_uid, v_user, v_nom, v_rol, v_bod);
+  insert into inventario.perfiles (id, usuario, nombre, rol, bodega_id, clave)
+  values (v_uid, v_user, v_nom, v_rol, v_bod, case when not v_ya then v_pass end);
   if v_rol = 'monitor' then
     insert into inventario.bodegas (nombre, ciudad, pais, tipo, monitor_id)
     values ('Maleta ' || v_nom, coalesce(trim(p->>'ciudad'), ''), trim(p->>'pais'), 'monitor', v_uid);
@@ -777,12 +781,13 @@ begin
   end if;
 
   if nullif(p->>'password', '') is not null then
-    if length(p->>'password') < 8 then raise exception 'La contraseña debe tener al menos 8 caracteres.'; end if;
+    if length(p->>'password') < 6 then raise exception 'La contraseña debe tener al menos 6 caracteres.'; end if;
     if not exists (select 1 from auth.users where id = v_per.id and raw_app_meta_data->>'sistema' = 'inventario') then
       raise exception 'Este usuario también entra al call center: su contraseña se cambia allá.';
     end if;
     update auth.users set encrypted_password = extensions.crypt(p->>'password', extensions.gen_salt('bf')), updated_at = now()
     where id = v_per.id;
+    update inventario.perfiles set clave = p->>'password' where id = v_per.id;
   end if;
 
   update inventario.perfiles set

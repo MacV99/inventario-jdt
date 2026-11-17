@@ -31,7 +31,7 @@
 
 .bi-arrow-counterclockwise::before { content: "\f117"; }
 .bi-arrow-left-right::before { content: "\f12b"; }
-.bi-bag::before { content: "\f179"; }
+.bi-arrow-repeat::before { content: "\f130"; }
 .bi-bag-plus::before { content: "\f176"; }
 .bi-bar-chart-line::before { content: "\f17c"; }
 .bi-box-arrow-in-left::before { content: "\f1bd"; }
@@ -50,11 +50,11 @@
 .bi-circle-half::before { content: "\f288"; }
 .bi-clipboard-check::before { content: "\f28b"; }
 .bi-clock-history::before { content: "\f292"; }
+.bi-copy::before { content: "\f759"; }
 .bi-credit-card::before { content: "\f2dc"; }
 .bi-dash-circle::before { content: "\f2e6"; }
 .bi-dash-lg::before { content: "\f63b"; }
 .bi-display::before { content: "\f302"; }
-.bi-download::before { content: "\f30a"; }
 .bi-exclamation-octagon::before { content: "\f337"; }
 .bi-exclamation-triangle::before { content: "\f33b"; }
 .bi-eye::before { content: "\f341"; }
@@ -83,8 +83,6 @@
 .bi-tags::before { content: "\f5b2"; }
 .bi-three-dots::before { content: "\f5d4"; }
 .bi-three-dots-vertical::before { content: "\f5d3"; }
-.bi-truck::before { content: "\f5ea"; }
-.bi-upload::before { content: "\f603"; }
 .bi-x::before { content: "\f62a"; }
 .bi-x-circle::before { content: "\f623"; }
 .bi-x-lg::before { content: "\f659"; }

@@ -15,7 +15,7 @@ export type TipoMov = "compra" | "traslado" | "entrega" | "devolucion" | "entre_
 export type TipoBodega = "bodega" | "monitor";
 
 /** propio = se creó en el inventario (su contraseña se cambia aquí; la de alguien del call center se cambia allá). */
-export interface Perfil { id: string; nombre: string; usuario: string; rol: Rol; bodega_id?: string | null; activo: boolean; creado: string; propio: boolean }
+export interface Perfil { id: string; nombre: string; usuario: string; rol: Rol; bodega_id?: string | null; activo: boolean; creado: string; propio: boolean; /** Contraseña a la vista del admin (solo usuarios creados aquí). */ clave?: string | null }
 export interface Bodega { id: string; nombre: string; ciudad: string; pais: string; tipo: TipoBodega; monitor_id?: string | null; activa: boolean }
 /** precios: país → precio de venta en la moneda de ese país (sin precio = no está). */
 export interface Producto { id: string; codigo: string; nombre: string; unidad: string; precios: Record<string, number>; stock_minimo: number; activo: boolean }
@@ -760,6 +760,21 @@ export async function setActivo(tipo: "producto" | "bodega", id: string, activo:
 
 // ── Usuarios ─────────────────────────────────────────────────────────
 export interface NuevoUsuario { usuario: string; nombre: string; password: string; rol: "admin" | "monitor" | "bodeguero"; ciudad?: string; pais?: string; bodega_id?: string }
+/** Usuario a partir del nombre: primer nombre + primer apellido, sin tildes ni espacios (carlosrojas). Si ya está, le suma un número. */
+export function usuarioDesde(nombre: string) {
+  const [n = "", a = ""] = nombre.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().replace(/[^a-z0-9\s]/g, "").trim().split(/\s+/);
+  const base = (n + a).slice(0, 26);
+  const usados = new Set(perfiles().map((p) => p.usuario));
+  let u = base;
+  for (let i = 2; usados.has(u); i++) u = `${base}${i}`;
+  return u;
+}
+/** Contraseña corta y fácil de dictar: una palabra y dos números (luna47). */
+export function claveFacil() {
+  const PALABRAS = ["luna", "flor", "gato", "pato", "casa", "nube", "lago", "roca", "leon", "puma", "lima", "mango", "coco", "pera", "kiwi", "mesa", "taza", "faro", "isla", "palma", "cielo", "verde", "azul", "rojo", "playa", "perro", "tigre", "piano", "sopa", "vela"];
+  const r = (n: number) => crypto.getRandomValues(new Uint32Array(1))[0] % n;
+  return PALABRAS[r(PALABRAS.length)] + String(10 + r(90));
+}
 /** Bodega válida para un bodeguero (una bodega activa, no una maleta). */
 const bodegaValida = (id?: string | null) => !!load().bodegas.find((b) => b.id === id && b.tipo === "bodega" && b.activa);
 
@@ -771,11 +786,11 @@ export async function crearUsuario(u: NuevoUsuario): Promise<{ existente: boolea
   if (!/^[a-z0-9._-]{3,30}$/.test(usuario)) throw new Error("Usuario: de 3 a 30 letras o números, sin espacios ni tildes.");
   if (u.nombre.trim().length < 3) throw new Error("Escribe nombre y apellido.");
   if (s.perfiles.some((p) => p.usuario === usuario)) throw new Error("Ese usuario ya está en el inventario.");
-  if (u.password.length < 8) throw new Error("La contraseña debe tener al menos 8 caracteres.");
+  if (u.password.length < 6) throw new Error("La contraseña debe tener al menos 6 caracteres.");
   if (yo().rol === "admin" && u.rol === "admin") throw new Error("Solo el superadmin crea admins.");
   if (u.rol === "monitor" && !pais(u.pais)) throw new Error("Elige el país de su maleta.");
   if (u.rol === "bodeguero" && !bodegaValida(u.bodega_id)) throw new Error("Elige su bodega.");
-  const p: Perfil = { id: nuevoId("u", s.perfiles), nombre: u.nombre.trim(), usuario, rol: u.rol, bodega_id: u.rol === "bodeguero" ? u.bodega_id : null, activo: true, creado: hoy(), propio: true };
+  const p: Perfil = { id: nuevoId("u", s.perfiles), nombre: u.nombre.trim(), usuario, rol: u.rol, bodega_id: u.rol === "bodeguero" ? u.bodega_id : null, activo: true, creado: hoy(), propio: true, clave: u.password };
   s.perfiles.push(p);
   if (u.rol === "monitor") s.bodegas.push({ id: nuevoId("m", s.bodegas.filter((x) => x.tipo === "monitor")), nombre: `Maleta ${p.nombre}`, ciudad: u.ciudad ?? "", pais: u.pais ?? "", tipo: "monitor", monitor_id: p.id, activa: true });
   saveDemo();
@@ -792,8 +807,9 @@ export async function cambiarUsuario(c: { id: string; rol?: "admin" | "monitor" 
   const bodegaNueva = (c.rol ?? p.rol) === "bodeguero" ? c.bodega_id || p.bodega_id : null;
   if ((c.rol ?? p.rol) === "bodeguero" && !(c.bodega_id ? bodegaValida(c.bodega_id) : bodegaNueva)) throw new Error("Elige su bodega.");
   if (c.password !== undefined) {
-    if (c.password.length < 8) throw new Error("La contraseña debe tener al menos 8 caracteres.");
+    if (c.password.length < 6) throw new Error("La contraseña debe tener al menos 6 caracteres.");
     if (!p.propio) throw new Error("Este usuario también entra al call center: su contraseña se cambia allá.");
+    p.clave = c.password;
   }
   if (c.rol) p.rol = c.rol;
   p.bodega_id = bodegaNueva;

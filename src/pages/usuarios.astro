@@ -1,5 +1,6 @@
 ---
-// Usuarios (admin): sin correos, igual que Equipo en el call center. Se crean con usuario y contraseña.
+// Usuarios (admin): sin correos, igual que Equipo en el call center. Se crean solo con nombre y apellido:
+// el usuario y una contraseña corta y fácil se generan solos, y el admin los ve para compartirlos.
 // Superadmin crea admins, bodegueros y monitores; admin crea bodegueros y monitores. Al crear un monitor se le crea su maleta;
 // el bodeguero queda a cargo de una bodega.
 // Si el usuario ya existe en el call center, se le da acceso y entra con su misma contraseña (que se cambia allá).
@@ -8,7 +9,6 @@ import PageHeader from "../components/ui/PageHeader.astro";
 import Select from "../components/ui/Select.astro";
 import Modal from "../components/ui/Modal.astro";
 import FormError from "../components/ui/FormError.astro";
-import PasswordInput from "../components/ui/PasswordInput.astro";
 import CrearRapido from "../components/app/CrearRapido.astro";
 ---
 
@@ -45,20 +45,12 @@ import CrearRapido from "../components/app/CrearRapido.astro";
     </div>
   </section>
 
-  <Modal id="user-modal" title="Nuevo usuario" description="Entra con este usuario y contraseña. Sin correo.">
+  <Modal id="user-modal" title="Nuevo usuario" description="El usuario y la contraseña se crean solos.">
     <form class="form-grid" data-form novalidate>
       <div class="span-2"><FormError /></div>
       <div class="field span-2">
         <label for="us-nombre">Nombre y apellido</label>
         <input id="us-nombre" name="nombre" class="input" placeholder="Ej. Carlos Rojas" />
-      </div>
-      <div class="field">
-        <label for="us-usuario">Usuario</label>
-        <input id="us-usuario" name="usuario" class="input" autocapitalize="none" spellcheck="false" autocomplete="off" placeholder="Ej. carlos" />
-      </div>
-      <div class="field">
-        <label for="us-pass">Contraseña</label>
-        <PasswordInput id="us-pass" name="password" autocomplete="new-password" placeholder="Mínimo 8 caracteres" />
       </div>
       <div class="field span-2" data-rol-field>
         <span class="label">Rol</span>
@@ -83,16 +75,15 @@ import CrearRapido from "../components/app/CrearRapido.astro";
     <button slot="footer" type="button" class="btn btn-primary" data-save>Crear</button>
   </Modal>
 
-  <Modal id="pass-modal" title="Cambiar contraseña">
-    <form class="form-grid" data-form novalidate>
-      <div class="span-2"><FormError /></div>
-      <div class="field span-2">
-        <label for="pw-pass">Contraseña nueva</label>
-        <PasswordInput id="pw-pass" name="password" autocomplete="new-password" placeholder="Mínimo 8 caracteres" />
-      </div>
-    </form>
-    <button slot="footer" type="button" class="btn btn-ghost" data-modal-close>Cancelar</button>
-    <button slot="footer" type="button" class="btn btn-primary" data-save>Cambiar</button>
+  <!-- Usuario y contraseña para compartir (copiar o tomar captura) -->
+  <Modal id="datos-modal" title="Datos para entrar">
+    <div class="cred">
+      <div class="cred-fila"><span class="muted">Usuario</span><strong data-cred-usuario></strong></div>
+      <div class="cred-fila"><span class="muted">Contraseña</span><strong data-cred-clave></strong></div>
+      <div class="cred-fila"><span class="muted">Entra en</span><span data-cred-web></span></div>
+    </div>
+    <button slot="footer" type="button" class="btn btn-ghost" data-cred-otra><i class="bi bi-arrow-repeat" aria-hidden="true"></i>Otra contraseña</button>
+    <button slot="footer" type="button" class="btn btn-primary" data-cred-copiar><i class="bi bi-copy" aria-hidden="true"></i>Copiar</button>
   </Modal>
 
   <!-- Bodega a cargo de un bodeguero (al pasarlo a bodeguero o al cambiarle la bodega) -->
@@ -133,7 +124,7 @@ import CrearRapido from "../components/app/CrearRapido.astro";
   import "../lib/ui";
   import { initTableFilter } from "../lib/ui/table-filter";
   import { conCrearPais, conCrearBodega } from "../lib/crear-rapido";
-  import { perfiles, todasBodegas, bodegas, bodega, paises, maletaDe, crearUsuario, cambiarUsuario, yo, ROL, type Perfil } from "../lib/store";
+  import { perfiles, todasBodegas, bodegas, bodega, paises, maletaDe, crearUsuario, cambiarUsuario, usuarioDesde, claveFacil, yo, ROL, type Perfil } from "../lib/store";
   import { day, esc, searchText, menu, avatar, intentar, dsSelect, uniqueOptions, flashRow, opcionesLugar as lugaresOpc, sinNuevo as texto, type DsSelectEl } from "../lib/view";
 
   const scope = document.querySelector<HTMLElement>("[data-table]")!;
@@ -156,7 +147,7 @@ import CrearRapido from "../components/app/CrearRapido.astro";
     if (!p.activo) return [{ value: "reactivar", label: "Reactivar", icon: "bi-arrow-counterclockwise" }];
     return [
       ...ROLES.filter((r) => r.value !== p.rol).map((r) => ({ value: `rol-${r.value}`, label: `Cambiar a ${ROL[r.value].label.toLowerCase()}`, icon: r.icon })),
-      ...(p.propio ? [{ value: "clave", label: "Cambiar contraseña", icon: "bi-key" }] : []),
+      ...(p.propio ? [{ value: "clave", label: "Ver usuario y contraseña", icon: "bi-key" }] : []),
       ...(p.rol === "bodeguero" ? [{ value: "bodega", label: "Cambiar bodega", icon: "bi-building" }, { value: "ver-bodega", label: "Ver su bodega", icon: "bi-box-seam" }] : []),
       ...(maletaDe(p.id) ? [{ value: "maleta", label: "Ver su maleta", icon: "bi-briefcase" }] : []),
       ...(p.rol === "monitor" && maletaDe(p.id) ? [{ value: "lugar", label: "Cambiar ciudad o país", icon: "bi-geo-alt" }] : []),
@@ -210,17 +201,10 @@ import CrearRapido from "../components/app/CrearRapido.astro";
   conCrearPais(pais, opciones);
   conCrearBodega(bod, () => bod.setOptions(opcionesBodega()));
   rol.addEventListener("change", verMaleta);
-  // Usuario sugerido: primer nombre en minúsculas y sin tildes
-  field("nombre").addEventListener("input", () => {
-    if (field("usuario").dataset.tocado) return;
-    field("usuario").value = (field("nombre").value.trim().split(/\s+/)[0] ?? "").normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().replace(/[^a-z0-9._-]/g, "");
-  });
-  field("usuario").addEventListener("input", () => (field("usuario").dataset.tocado = "1"));
 
   document.querySelector("[data-new]")!.addEventListener("click", () => {
     intentar(form, () => {});
     form.reset();
-    delete field("usuario").dataset.tocado;
     rol.value = "monitor";
     pais.value = "";
     ciudad.value = "";
@@ -234,14 +218,17 @@ import CrearRapido from "../components/app/CrearRapido.astro";
 
   modal.querySelector("[data-save]")!.addEventListener("click", async () => {
     let existente = false;
-    const nombre = field("nombre").value.trim();
+    const nombre = field("nombre").value.trim().replace(/\s+/g, " ");
+    const usuario = usuarioDesde(nombre);
+    const password = claveFacil();
     const ok = await intentar(form, async () => {
+      if (nombre.split(" ").length < 2) throw new Error("Escribe nombre y apellido.");
       if (rol.value === "monitor" && (!pais.value || !ciudad.value)) throw new Error("Elige el país y la ciudad de su maleta.");
       if (rol.value === "bodeguero" && !bod.value) throw new Error("Elige la bodega a su cargo.");
       ({ existente } = await crearUsuario({
         nombre,
-        usuario: field("usuario").value,
-        password: field("password").value,
+        usuario,
+        password,
         rol: rol.value as RolUs,
         ciudad: texto(ciudad.value),
         pais: pais.value,
@@ -250,21 +237,45 @@ import CrearRapido from "../components/app/CrearRapido.astro";
     });
     if (!ok) return;
     window.ui.closeModal("user-modal");
+    render();
+    const nuevo = perfiles().find((p) => p.usuario === usuario);
+    flashRow(body.querySelector(`tr[data-id="${nuevo?.id}"]`));
     if (existente)
       window.ui.alert({ tone: "info", title: `${nombre} ya tenía usuario`, message: "Ya usa el call center: entra al inventario con su misma contraseña de allá." });
-    else window.ui.toast(`${nombre} creado. Ya puede entrar.`, { tone: "success" });
-    render();
-    flashRow(body.querySelector(`tr[data-id="${perfiles().find((p) => p.nombre === nombre)?.id}"]`));
+    else if (nuevo) abrirDatos(nuevo);
   });
 
-  // ── Cambiar contraseña ──
-  const pModal = document.getElementById("pass-modal")!;
-  const pForm = pModal.querySelector<HTMLFormElement>("[data-form]")!;
-  let actual = "";
-  pModal.querySelector("[data-save]")!.addEventListener("click", async () => {
-    const pass = pForm.querySelector<HTMLInputElement>("[name=password]")!.value;
-    if (!(await intentar(pForm, () => cambiarUsuario({ id: actual, password: pass }), "Contraseña cambiada"))) return;
-    window.ui.closeModal("pass-modal");
+  // ── Usuario y contraseña para compartir ──
+  const dModal = document.getElementById("datos-modal")!;
+  const web = location.host;
+  let datosDe: Perfil | null = null;
+  function abrirDatos(p: Perfil) {
+    datosDe = p;
+    dModal.querySelector("[data-modal-title]")!.textContent = p.nombre;
+    dModal.querySelector("[data-cred-usuario]")!.textContent = p.usuario;
+    dModal.querySelector("[data-cred-clave]")!.textContent = p.clave || "No guardada: crea otra";
+    dModal.querySelector("[data-cred-web]")!.textContent = web;
+    dModal.querySelector<HTMLButtonElement>("[data-cred-copiar]")!.disabled = !p.clave;
+    window.ui.openModal("datos-modal");
+  }
+  dModal.querySelector("[data-cred-copiar]")!.addEventListener("click", async () => {
+    if (!datosDe?.clave) return;
+    const texto = `Usuario: ${datosDe.usuario}\nContraseña: ${datosDe.clave}\nEntra en: https://${web}`;
+    try {
+      await navigator.clipboard.writeText(texto);
+      window.ui.toast("Copiado. Pégalo en el chat.", { tone: "success" });
+    } catch {
+      window.ui.toast("No se pudo copiar. Toma una captura.", { tone: "danger" });
+    }
+  });
+  dModal.querySelector("[data-cred-otra]")!.addEventListener("click", async () => {
+    const p = datosDe;
+    if (!p) return;
+    const ok = await window.ui.confirm({ tone: "warning", title: `¿Otra contraseña para ${p.nombre}?`, message: "La que tiene ahora deja de servir.", confirmText: "Crear otra" });
+    if (!ok) return;
+    const password = claveFacil();
+    if (!(await intentar(null, () => cambiarUsuario({ id: p.id, password }), "Contraseña nueva lista"))) return;
+    abrirDatos(perfiles().find((x) => x.id === p.id) ?? { ...p, clave: password });
   });
 
   // ── Bodega del bodeguero ──
@@ -343,14 +354,7 @@ import CrearRapido from "../components/app/CrearRapido.astro";
     if (value === "lugar" || (value === "rol-monitor" && !maletaDe(id))) return abrirLugar(p, value === "rol-monitor");
     // Pasar a bodeguero o cambiarle la bodega: se pregunta cuál
     if (value === "bodega" || value === "rol-bodeguero") return abrirBodega(p, value === "rol-bodeguero");
-    if (value === "clave") {
-      actual = id;
-      intentar(pForm, () => {});
-      pForm.reset();
-      pModal.querySelector("[data-modal-title]")!.textContent = `Contraseña de ${p.nombre}`;
-      window.ui.openModal("pass-modal");
-      return;
-    }
+    if (value === "clave") return abrirDatos(p);
     let hecho = false;
     if (value === "rol-monitor") hecho = await intentar(null, () => cambiarUsuario({ id, rol: "monitor" }), `${p.nombre} ahora es monitor`);
     if (value === "rol-admin") {
@@ -372,3 +376,29 @@ import CrearRapido from "../components/app/CrearRapido.astro";
     flashRow(body.querySelector(`tr[data-id="${id}"]`));
   });
 </script>
+
+<style>
+  .cred {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-3);
+    padding: var(--space-4);
+    border: 1px solid var(--clr-border);
+    border-radius: var(--radius-lg);
+    background-color: var(--modal-field-bg);
+  }
+
+  .cred-fila {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: var(--space-2) var(--space-3);
+  }
+
+  .cred-fila strong {
+    font-size: 1.3rem;
+    letter-spacing: 0.02em;
+    user-select: all;
+  }
+</style>
