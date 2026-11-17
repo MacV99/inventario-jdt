@@ -101,7 +101,7 @@ import FormError from "../components/ui/FormError.astro";
 <script>
   import "../lib/ui";
   import { initTableFilter } from "../lib/ui/table-filter";
-  import { bodegas, productos, stockFilas, bodega, producto, cantidadEn, guardarConteo, paisActual } from "../lib/store";
+  import { bodegas, productos, stockFilas, bodega, producto, cantidadEn, guardarConteo, paisActual, miBodega } from "../lib/store";
   import { contar } from "../lib/ui/motion";
   import { num, esc, searchText, uniqueOptions, dsSelect, urlParam, intentar, parseNum, opcionesLugar } from "../lib/view";
 
@@ -117,6 +117,9 @@ import FormError from "../components/ui/FormError.astro";
   opcionesBodega();
 
   if (paisActual()) fPais.hidden = true;
+  // Bodeguero: siempre su bodega (sin filtros de país ni bodega)
+  const mia = miBodega();
+  if (mia) fPais.hidden = fUbicacion.hidden = true;
 
   // Lo que se está mirando: todo JDT, un país o una bodega
   const tbody = scope.querySelector<HTMLElement>("[data-body]")!;
@@ -156,7 +159,7 @@ import FormError from "../components/ui/FormError.astro";
   fUbicacion.addEventListener("change", (e) => {
     if ((e as CustomEvent).detail) pintar();
   });
-  fUbicacion.value = urlParam("ubicacion");
+  fUbicacion.value = mia || urlParam("ubicacion");
   pintar();
 
   // ── Conteo físico ──
@@ -198,8 +201,8 @@ import FormError from "../components/ui/FormError.astro";
   cBody.addEventListener("input", recalcConteo);
   document.querySelector("[data-conteo]")!.addEventListener("click", () => {
     intentar(cm, () => {});
-    cBodega.setOptions(opcionesLugar(bodegas().filter((b) => b.activa)));
-    cBodega.value = urlParam("ubicacion");
+    cBodega.setOptions(opcionesLugar(bodegas().filter((b) => b.activa && (!mia || b.id === mia))));
+    cBodega.value = mia || urlParam("ubicacion");
     (cm.querySelector("#c-nota") as HTMLInputElement).value = "";
     pintarConteo();
     window.ui.openModal("conteo-modal");

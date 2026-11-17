@@ -60,6 +60,13 @@ create table if not exists inventario.bodegas (
   check (tipo = 'monitor' or ciudad <> '')
 );
 
+-- Bodeguero (2026-11-17): jefe de UNA bodega. Ve y mueve solo lo de su bodega; no ve costos ni dinero.
+alter table inventario.perfiles drop constraint if exists perfiles_rol_check;
+alter table inventario.perfiles add constraint perfiles_rol_check check (rol in ('superadmin','admin','monitor','bodeguero'));
+alter table inventario.perfiles add column if not exists bodega_id uuid references inventario.bodegas(id);
+alter table inventario.perfiles drop constraint if exists perfiles_bodeguero_bodega;
+alter table inventario.perfiles add constraint perfiles_bodeguero_bodega check ((rol = 'bodeguero') = (bodega_id is not null));
+
 create table if not exists inventario.productos (
   id           uuid primary key default gen_random_uuid(),
   codigo       text not null,
@@ -269,6 +276,18 @@ begin
   if v_yo.rol = 'monitor' and (v_tipo <> 'venta' or v_o.monitor_id is distinct from v_yo.id) then
     raise exception 'Solo puedes registrar ventas de tu maleta.';
   end if;
+  -- Bodeguero: solo lo que entra o sale de SU bodega (no ventas, ni traer de otra bodega)
+  if v_yo.rol = 'bodeguero' and not coalesce(case v_tipo
+    when 'compra'         then v_d.id = v_yo.bodega_id
+    when 'ajuste_entrada' then v_d.id = v_yo.bodega_id
+    when 'devolucion'     then v_d.id = v_yo.bodega_id
+    when 'ajuste_salida'  then v_o.id = v_yo.bodega_id
+    when 'traslado'       then v_o.id = v_yo.bodega_id
+    when 'entrega'        then v_o.id = v_yo.bodega_id
+    else false
+  end, false) then
+    raise exception 'Solo puedes mover mercancía de tu bodega.';
+  end if;
 
   if not coalesce(case v_tipo
     when 'compra'         then v_o.id is null and v_d.tipo = 'bodega'
@@ -361,21 +380,23 @@ begin
 end $$;
 
 -- Todo lo que ve quien llama, en un solo JSON (lo pinta la página). El monitor recibe solo lo suyo y sin costos.
+-- El bodeguero: su bodega (stock y movimientos), los nombres de bodegas y maletas (para trasladar o entregar), sin costos ni dinero.
 -- Los productos van todos (también los desactivados): un monitor puede tener uno en la maleta o haberlo vendido.
 create or replace function inventario.datos(v_yo inventario.perfiles)
 returns jsonb language plpgsql stable security definer set search_path = '' as $$
 declare
   v_admin  boolean := v_yo.rol in ('superadmin','admin');
-  v_maleta uuid := (select id from inventario.bodegas where monitor_id = v_yo.id);
+  -- «Lo mío»: la maleta del monitor o la bodega del bodeguero
+  v_maleta uuid := case when v_yo.rol = 'bodeguero' then v_yo.bodega_id else (select id from inventario.bodegas where monitor_id = v_yo.id) end;
 begin
   return jsonb_build_object(
-    'yo', jsonb_build_object('id', v_yo.id, 'nombre', v_yo.nombre, 'usuario', v_yo.usuario, 'rol', v_yo.rol),
+    'yo', jsonb_build_object('id', v_yo.id, 'nombre', v_yo.nombre, 'usuario', v_yo.usuario, 'rol', v_yo.rol, 'bodega_id', v_yo.bodega_id),
     'moneda', (select valor from inventario.config where clave = 'moneda_base'),
     'paises', coalesce((
       select jsonb_agg(jsonb_build_object('nombre', x.nombre, 'moneda', x.moneda, 'tasa', x.tasa) order by x.nombre)
       from inventario.paises x), '[]'),
     'perfiles', coalesce((
-      select jsonb_agg(jsonb_build_object('id', p.id, 'nombre', p.nombre, 'usuario', p.usuario, 'rol', p.rol,
+      select jsonb_agg(jsonb_build_object('id', p.id, 'nombre', p.nombre, 'usuario', p.usuario, 'rol', p.rol, 'bodega_id', p.bodega_id,
                'activo', p.activo, 'creado', (p.created_at at time zone 'America/Bogota')::date,
                'propio', coalesce(u.raw_app_meta_data->>'sistema', '') = 'inventario') order by p.nombre)
       from inventario.perfiles p join auth.users u on u.id = p.id
@@ -383,7 +404,7 @@ begin
     'bodegas', coalesce((
       select jsonb_agg(jsonb_build_object('id', b.id, 'nombre', b.nombre, 'ciudad', b.ciudad, 'pais', b.pais,
                'tipo', b.tipo, 'monitor_id', b.monitor_id, 'activa', b.activa) order by b.tipo, b.nombre)
-      from inventario.bodegas b where v_admin or b.id = v_maleta), '[]'),
+      from inventario.bodegas b where v_admin or v_yo.rol = 'bodeguero' or b.id = v_maleta), '[]'),
     'productos', coalesce((
       select jsonb_agg(jsonb_build_object('id', x.id, 'codigo', x.codigo, 'nombre', x.nombre, 'unidad', x.unidad,
                'stock_minimo', x.stock_minimo, 'activo', x.activo,
@@ -424,14 +445,14 @@ end $$;
 -- Datos para pintar
 create or replace function public.inv_datos()
 returns jsonb language sql stable security definer set search_path = '' as $$
-  select inventario.datos(inventario.exigir(array['superadmin','admin','monitor']));
+  select inventario.datos(inventario.exigir(array['superadmin','admin','monitor','bodeguero']));
 $$;
 
 -- Registra uno o varios movimientos en una sola operación (todo o nada). p: [{...}, {...}]
 create or replace function public.inv_registrar(p jsonb)
 returns jsonb language plpgsql security definer set search_path = '' as $$
 declare
-  v_yo  inventario.perfiles := inventario.exigir(array['superadmin','admin','monitor']);
+  v_yo  inventario.perfiles := inventario.exigir(array['superadmin','admin','monitor','bodeguero']);
   v_ids bigint[] := '{}';
   v_m   jsonb;
 begin
@@ -672,8 +693,8 @@ end $$;
 -- ── Usuarios ─────────────────────────────────────────────────────────
 -- Sin correos, igual que el call center: el usuario «german» entra como german@jdt.local.
 -- Si el usuario ya existe (p. ej. alguien del call center), se le da acceso y entra con su misma contraseña.
--- superadmin crea admins y monitores; admin crea monitores.
--- p: {usuario, nombre, password, rol, ciudad, pais}
+-- superadmin crea admins, monitores y bodegueros; admin crea monitores y bodegueros.
+-- p: {usuario, nombre, password, rol, ciudad, pais, bodega_id (bodeguero)}
 create or replace function public.inv_usuario_crear(p jsonb)
 returns jsonb language plpgsql security definer set search_path = '' as $$
 declare
@@ -685,9 +706,13 @@ declare
   v_mail text;
   v_uid  uuid;
   v_ya   boolean := false;
+  v_bod  uuid := case when p->>'rol' = 'bodeguero' then nullif(p->>'bodega_id', '')::uuid end;
 begin
-  if v_rol not in ('admin','monitor') then raise exception 'Rol no válido.'; end if;
-  if v_yo.rol = 'admin' and v_rol <> 'monitor' then raise exception 'Solo el superadmin crea admins.'; end if;
+  if v_rol is null or v_rol not in ('admin','monitor','bodeguero') then raise exception 'Rol no válido.'; end if;
+  if v_yo.rol = 'admin' and v_rol = 'admin' then raise exception 'Solo el superadmin crea admins.'; end if;
+  if v_rol = 'bodeguero' and not exists (select 1 from inventario.bodegas where id = v_bod and tipo = 'bodega' and activa) then
+    raise exception 'Elige su bodega.';
+  end if;
   if v_user !~ '^[a-z0-9._-]{3,30}$' then raise exception 'Usuario: de 3 a 30 letras o números, sin espacios ni tildes.'; end if;
   if length(v_nom) < 3 then raise exception 'Escribe nombre y apellido.'; end if;
   if v_rol = 'monitor' and not exists (select 1 from inventario.paises where nombre = trim(coalesce(p->>'pais', ''))) then
@@ -718,7 +743,7 @@ begin
     end if;
   end if;
 
-  insert into inventario.perfiles (id, usuario, nombre, rol) values (v_uid, v_user, v_nom, v_rol);
+  insert into inventario.perfiles (id, usuario, nombre, rol, bodega_id) values (v_uid, v_user, v_nom, v_rol, v_bod);
   if v_rol = 'monitor' then
     insert into inventario.bodegas (nombre, ciudad, pais, tipo, monitor_id)
     values ('Maleta ' || v_nom, coalesce(trim(p->>'ciudad'), ''), trim(p->>'pais'), 'monitor', v_uid);
@@ -726,7 +751,8 @@ begin
   return jsonb_build_object('existente', v_ya, 'datos', inventario.datos(v_yo));
 end $$;
 
--- Cambia rol, nombre, contraseña o acceso. p: {id, rol?, nombre?, password?, activo?, ciudad?, pais?}
+-- Cambia rol, nombre, contraseña, acceso o bodega. p: {id, rol?, nombre?, password?, activo?, ciudad?, pais?, bodega_id?}
+-- admin cambia a monitores y bodegueros (no a otros admins).
 -- La contraseña solo se cambia aquí si el usuario se creó en el inventario (la de alguien del call center se cambia allá).
 create or replace function public.inv_usuario_cambiar(p jsonb)
 returns jsonb language plpgsql security definer set search_path = '' as $$
@@ -734,14 +760,21 @@ declare
   v_yo  inventario.perfiles := inventario.exigir(array['superadmin','admin']);
   v_per inventario.perfiles;
   v_rol text := nullif(p->>'rol', '');
+  v_bod uuid := nullif(p->>'bodega_id', '')::uuid;
 begin
   select * into v_per from inventario.perfiles where id = nullif(p->>'id', '')::uuid;
   if v_per.id is null then raise exception 'Ese usuario no existe.'; end if;
   if v_per.rol = 'superadmin' or v_per.id = v_yo.id then raise exception 'Ese usuario no se cambia aquí.'; end if;
-  if v_yo.rol = 'admin' and (v_per.rol <> 'monitor' or coalesce(v_rol, 'monitor') <> 'monitor') then
+  if v_yo.rol = 'admin' and (v_per.rol = 'admin' or v_rol = 'admin') then
     raise exception 'Solo el superadmin cambia a los admins.';
   end if;
-  if v_rol is not null and v_rol not in ('admin','monitor') then raise exception 'Rol no válido.'; end if;
+  if v_rol is not null and v_rol not in ('admin','monitor','bodeguero') then raise exception 'Rol no válido.'; end if;
+  -- Bodeguero: su bodega (la nueva o la que ya tenía). Otro rol: sin bodega.
+  v_bod := case when coalesce(v_rol, v_per.rol) = 'bodeguero' then coalesce(v_bod, v_per.bodega_id) end;
+  if coalesce(v_rol, v_per.rol) = 'bodeguero'
+     and not exists (select 1 from inventario.bodegas where id = v_bod and tipo = 'bodega' and (activa or v_bod = v_per.bodega_id)) then
+    raise exception 'Elige su bodega.';
+  end if;
 
   if nullif(p->>'password', '') is not null then
     if length(p->>'password') < 8 then raise exception 'La contraseña debe tener al menos 8 caracteres.'; end if;
@@ -754,6 +787,7 @@ begin
 
   update inventario.perfiles set
     rol    = coalesce(v_rol, rol),
+    bodega_id = v_bod,
     nombre = coalesce(nullif(regexp_replace(trim(p->>'nombre'), '\s+', ' ', 'g'), ''), nombre),
     activo = coalesce((p->>'activo')::boolean, activo)
   where id = v_per.id

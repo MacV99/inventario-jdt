@@ -54,7 +54,8 @@ import PasswordInput from "../components/ui/PasswordInput.astro";
   // Solo direcciones de esta misma página ("/algo"); nunca otra página de internet ("//otra.com")
   const pedido = new URLSearchParams(location.search).get("volver") ?? "";
   const volver = /^\/(?![/\\])/.test(pedido) ? pedido : "";
-  const destino = (rol: string) => (rol === "monitor" ? (volver.startsWith("/mi") ? volver : "/mi-maleta") : volver.startsWith("/") && !volver.startsWith("/mi") && !volver.startsWith("/login") ? volver : "/");
+  const destino = (rol: string) =>
+    rol === "bodeguero" ? (/^\/(inventario|movimientos)\b/.test(volver) ? volver : "/inventario") : (rol === "monitor" ? (volver.startsWith("/mi") ? volver : "/mi-maleta") : volver.startsWith("/") && !volver.startsWith("/mi") && !volver.startsWith("/login") ? volver : "/");
 
   // Por qué lo sacaron (sin acceso o desactivado)
   const motivo = sessionStorage.getItem("jdt-inv-motivo");

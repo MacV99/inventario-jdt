@@ -1,6 +1,7 @@
 ---
 // Usuarios (admin): sin correos, igual que Equipo en el call center. Se crean con usuario y contraseña.
-// Superadmin crea admins y monitores; admin crea monitores. Al crear un monitor se le crea su maleta.
+// Superadmin crea admins, bodegueros y monitores; admin crea bodegueros y monitores. Al crear un monitor se le crea su maleta;
+// el bodeguero queda a cargo de una bodega.
 // Si el usuario ya existe en el call center, se le da acceso y entra con su misma contraseña (que se cambia allá).
 import AppLayout from "../layouts/AppLayout.astro";
 import PageHeader from "../components/ui/PageHeader.astro";
@@ -21,7 +22,7 @@ import PasswordInput from "../components/ui/PasswordInput.astro";
         <i class="bi bi-search" aria-hidden="true"></i>
         <input class="input" type="search" placeholder="Buscar nombre o usuario…" aria-label="Buscar" data-filter-q />
       </label>
-      <Select value="" filter="rol" label="Rol" options={[{ value: "", label: "Todos los roles" }, { value: "monitor", label: "Monitores" }, { value: "admin", label: "Admins" }, { value: "inactivo", label: "Desactivados" }]} />
+      <Select value="" filter="rol" label="Rol" options={[{ value: "", label: "Todos los roles" }, { value: "monitor", label: "Monitores" }, { value: "bodeguero", label: "Bodegueros" }, { value: "admin", label: "Admins" }, { value: "inactivo", label: "Desactivados" }]} />
     </div>
     <div class="table-wrap">
       <table class="table table-cards">
@@ -60,8 +61,13 @@ import PasswordInput from "../components/ui/PasswordInput.astro";
       </div>
       <div class="field span-2" data-rol-field>
         <span class="label">Rol</span>
-        <Select name="rol" value="monitor" options={[{ value: "monitor", label: "Monitor · vende de su maleta" }, { value: "admin", label: "Admin · maneja todo el inventario" }]} />
+        <Select name="rol" value="monitor" options={[]} />
       </div>
+      <div class="field span-2" data-bodega>
+        <span class="label">Bodega a su cargo</span>
+        <Select name="bodega" searchable placeholder="Elegir bodega" options={[]} />
+      </div>
+      <p class="muted small span-2" data-bodega>Ve y mueve solo la mercancía de esa bodega.</p>
       <div class="field" data-maleta>
         <span class="label">País</span>
         <Select name="pais" searchable placeholder="Elegir país" options={[]} />
@@ -88,6 +94,20 @@ import PasswordInput from "../components/ui/PasswordInput.astro";
     <button slot="footer" type="button" class="btn btn-primary" data-save>Cambiar</button>
   </Modal>
 
+  <!-- Bodega a cargo de un bodeguero (al pasarlo a bodeguero o al cambiarle la bodega) -->
+  <Modal id="bodega-modal" title="Bodega a su cargo">
+    <form class="form-grid" data-form novalidate>
+      <div class="span-2"><FormError /></div>
+      <div class="field span-2">
+        <span class="label">Bodega</span>
+        <Select name="bodega" searchable placeholder="Elegir bodega" options={[]} />
+      </div>
+      <p class="muted small span-2">Ve y mueve solo la mercancía de esa bodega.</p>
+    </form>
+    <button slot="footer" type="button" class="btn btn-ghost" data-modal-close>Cancelar</button>
+    <button slot="footer" type="button" class="btn btn-primary" data-save>Guardar</button>
+  </Modal>
+
   <!-- Dónde está la maleta de un monitor (al pasar un admin a monitor o al cambiarlo de ciudad) -->
   <Modal id="lugar-modal" title="Ciudad de su maleta">
     <form class="form-grid" data-form novalidate>
@@ -110,22 +130,31 @@ import PasswordInput from "../components/ui/PasswordInput.astro";
 <script>
   import "../lib/ui";
   import { initTableFilter } from "../lib/ui/table-filter";
-  import { perfiles, todasBodegas, paises, maletaDe, crearUsuario, cambiarUsuario, yo, ROL, type Perfil } from "../lib/store";
-  import { day, esc, searchText, menu, avatar, intentar, dsSelect, uniqueOptions, flashRow, sinNuevo as texto, type DsSelectEl } from "../lib/view";
+  import { perfiles, todasBodegas, bodegas, bodega, paises, maletaDe, crearUsuario, cambiarUsuario, yo, ROL, type Perfil } from "../lib/store";
+  import { day, esc, searchText, menu, avatar, intentar, dsSelect, uniqueOptions, flashRow, opcionesLugar as lugaresOpc, sinNuevo as texto, type DsSelectEl } from "../lib/view";
 
   const scope = document.querySelector<HTMLElement>("[data-table]")!;
   const body = scope.querySelector<HTMLElement>("[data-body]")!;
   const table = initTableFilter(scope);
   const soySuper = yo().rol === "superadmin";
+  type RolUs = "admin" | "monitor" | "bodeguero";
+  const ROLES: { value: RolUs; label: string; icon: string }[] = [
+    { value: "monitor", label: "Monitor · vende de su maleta", icon: "bi-person" },
+    { value: "bodeguero", label: "Bodeguero · maneja una bodega", icon: "bi-building" },
+    ...(soySuper ? [{ value: "admin" as const, label: "Admin · maneja todo el inventario", icon: "bi-shield-check" }] : []),
+  ];
+  /** Bodegas para un bodeguero: las activas (del país elegido arriba). */
+  const opcionesBodega = () => lugaresOpc(bodegas().filter((b) => b.tipo === "bodega" && b.activa), true);
 
-  /** Qué puedo hacerle a cada uno: superadmin a todos (menos a sí mismo); admin solo a monitores. */
+  /** Qué puedo hacerle a cada uno: superadmin a todos (menos a sí mismo); admin a monitores y bodegueros. */
   const acciones = (p: Perfil) => {
     if (p.id === yo().id || p.rol === "superadmin") return [];
-    if (!soySuper && p.rol !== "monitor") return [];
+    if (!soySuper && p.rol === "admin") return [];
     if (!p.activo) return [{ value: "reactivar", label: "Reactivar", icon: "bi-arrow-counterclockwise" }];
     return [
-      ...(soySuper ? [p.rol === "admin" ? { value: "monitor", label: "Cambiar a monitor", icon: "bi-person" } : { value: "admin", label: "Cambiar a admin", icon: "bi-shield-check" }] : []),
+      ...ROLES.filter((r) => r.value !== p.rol).map((r) => ({ value: `rol-${r.value}`, label: `Cambiar a ${ROL[r.value].label.toLowerCase()}`, icon: r.icon })),
       ...(p.propio ? [{ value: "clave", label: "Cambiar contraseña", icon: "bi-key" }] : []),
+      ...(p.rol === "bodeguero" ? [{ value: "bodega", label: "Cambiar bodega", icon: "bi-building" }, { value: "ver-bodega", label: "Ver su bodega", icon: "bi-box-seam" }] : []),
       ...(maletaDe(p.id) ? [{ value: "maleta", label: "Ver su maleta", icon: "bi-briefcase" }] : []),
       ...(p.rol === "monitor" && maletaDe(p.id) ? [{ value: "lugar", label: "Cambiar ciudad o país", icon: "bi-geo-alt" }] : []),
       { separator: true },
@@ -137,7 +166,8 @@ import PasswordInput from "../components/ui/PasswordInput.astro";
     const ps = perfiles();
     body.innerHTML = ps
       .map((p) => {
-        const rol = !p.activo ? '<span class="badge">Desactivado</span>' : ROL[p.rol].label;
+        const suya = p.rol === "bodeguero" ? bodega(p.bodega_id)?.nombre : "";
+        const rol = !p.activo ? '<span class="badge">Desactivado</span>' : `${ROL[p.rol].label}${suya ? `<p class="sub">${esc(suya)}</p>` : ""}`;
         const a = acciones(p);
         const cc = p.propio ? "" : ' <span class="muted small" data-tip="Entra con su misma cuenta del call center">· call center</span>';
         return `<tr data-row data-id="${p.id}" data-rol="${p.activo ? (p.rol === "superadmin" ? "admin" : p.rol) : "inactivo"}" data-text="${esc(searchText(p.nombre, p.usuario))}">
@@ -161,14 +191,18 @@ import PasswordInput from "../components/ui/PasswordInput.astro";
   const rol = dsSelect(form, "ds-select[name=rol]");
   const pais = dsSelect(form, "ds-select[name=pais]");
   const ciudad = dsSelect(form, "ds-select[name=ciudad]");
-  form.querySelector<HTMLElement>("[data-rol-field]")!.hidden = !soySuper;
+  const bod = dsSelect(form, "ds-select[name=bodega]");
+  rol.setOptions(ROLES.map(({ value, label }) => ({ value, label })));
   // Países: los de Países y monedas. Ciudades: las que ya hay en ese país (o una nueva)
   const opcionesLugar = (pais: DsSelectEl, ciudad: DsSelectEl) => {
     pais.setOptions(paises().map((x) => ({ value: x.nombre, label: x.nombre, hint: x.moneda })));
     ciudad.setOptions(uniqueOptions(todasBodegas().filter((b) => !pais.value || b.pais === pais.value).map((b) => b.ciudad)));
   };
   const opciones = () => opcionesLugar(pais, ciudad);
-  const verMaleta = () => form.querySelectorAll<HTMLElement>("[data-maleta]").forEach((el) => (el.hidden = rol.value !== "monitor"));
+  const verMaleta = () => {
+    form.querySelectorAll<HTMLElement>("[data-maleta]").forEach((el) => (el.hidden = rol.value !== "monitor"));
+    form.querySelectorAll<HTMLElement>("[data-bodega]").forEach((el) => (el.hidden = rol.value !== "bodeguero"));
+  };
   pais.addEventListener("change", opciones);
   rol.addEventListener("change", verMaleta);
   // Usuario sugerido: primer nombre en minúsculas y sin tildes
@@ -185,6 +219,8 @@ import PasswordInput from "../components/ui/PasswordInput.astro";
     rol.value = "monitor";
     pais.value = "";
     ciudad.value = "";
+    bod.setOptions(opcionesBodega());
+    bod.value = "";
     opciones();
     verMaleta();
     window.ui.openModal("user-modal");
@@ -196,13 +232,15 @@ import PasswordInput from "../components/ui/PasswordInput.astro";
     const nombre = field("nombre").value.trim();
     const ok = await intentar(form, async () => {
       if (rol.value === "monitor" && (!pais.value || !ciudad.value)) throw new Error("Elige el país y la ciudad de su maleta.");
+      if (rol.value === "bodeguero" && !bod.value) throw new Error("Elige la bodega a su cargo.");
       ({ existente } = await crearUsuario({
         nombre,
         usuario: field("usuario").value,
         password: field("password").value,
-        rol: rol.value as "admin" | "monitor",
+        rol: rol.value as RolUs,
         ciudad: texto(ciudad.value),
         pais: pais.value,
+        bodega_id: rol.value === "bodeguero" ? bod.value : undefined,
       }));
     });
     if (!ok) return;
@@ -222,6 +260,36 @@ import PasswordInput from "../components/ui/PasswordInput.astro";
     const pass = pForm.querySelector<HTMLInputElement>("[name=password]")!.value;
     if (!(await intentar(pForm, () => cambiarUsuario({ id: actual, password: pass }), "Contraseña cambiada"))) return;
     window.ui.closeModal("pass-modal");
+  });
+
+  // ── Bodega del bodeguero ──
+  const bModal = document.getElementById("bodega-modal")!;
+  const bForm = bModal.querySelector<HTMLFormElement>("[data-form]")!;
+  const bSel = dsSelect(bForm, "ds-select[name=bodega]");
+  let aCargo: { p: Perfil; aBodeguero: boolean } | null = null;
+  function abrirBodega(p: Perfil, aBodeguero: boolean) {
+    aCargo = { p, aBodeguero };
+    intentar(bForm, () => {});
+    bModal.querySelector("[data-modal-title]")!.textContent = aBodeguero ? `${p.nombre} pasa a bodeguero` : `Bodega de ${p.nombre}`;
+    bSel.setOptions(opcionesBodega());
+    bSel.value = p.bodega_id ?? "";
+    window.ui.openModal("bodega-modal");
+  }
+  bModal.querySelector("[data-save]")!.addEventListener("click", async () => {
+    if (!aCargo) return;
+    const { p, aBodeguero } = aCargo;
+    const ok = await intentar(
+      bForm,
+      async () => {
+        if (!bSel.value) throw new Error("Elige la bodega a su cargo.");
+        await cambiarUsuario({ id: p.id, rol: aBodeguero ? "bodeguero" : undefined, bodega_id: bSel.value });
+      },
+      aBodeguero ? `${p.nombre} ahora es bodeguero` : "Bodega cambiada",
+    );
+    if (!ok) return;
+    window.ui.closeModal("bodega-modal");
+    render();
+    flashRow(body.querySelector(`tr[data-id="${p.id}"]`));
   });
 
   // ── Ciudad y país de la maleta ──
@@ -263,8 +331,11 @@ import PasswordInput from "../components/ui/PasswordInput.astro";
     const p = perfiles().find((x) => x.id === id)!;
     const { value } = (e as CustomEvent<{ value: string }>).detail;
     if (value === "maleta") return void (location.href = `/inventario?ubicacion=${maletaDe(id)!.id}`);
+    if (value === "ver-bodega") return void (location.href = `/inventario?ubicacion=${p.bodega_id}`);
     // Pasar a monitor a alguien sin maleta, o cambiar la ciudad de su maleta: se pregunta dónde
-    if (value === "lugar" || (value === "monitor" && !maletaDe(id))) return abrirLugar(p, value === "monitor");
+    if (value === "lugar" || (value === "rol-monitor" && !maletaDe(id))) return abrirLugar(p, value === "rol-monitor");
+    // Pasar a bodeguero o cambiarle la bodega: se pregunta cuál
+    if (value === "bodega" || value === "rol-bodeguero") return abrirBodega(p, value === "rol-bodeguero");
     if (value === "clave") {
       actual = id;
       intentar(pForm, () => {});
@@ -274,8 +345,8 @@ import PasswordInput from "../components/ui/PasswordInput.astro";
       return;
     }
     let hecho = false;
-    if (value === "monitor") hecho = await intentar(null, () => cambiarUsuario({ id, rol: "monitor" }), `${p.nombre} ahora es monitor`);
-    if (value === "admin") {
+    if (value === "rol-monitor") hecho = await intentar(null, () => cambiarUsuario({ id, rol: "monitor" }), `${p.nombre} ahora es monitor`);
+    if (value === "rol-admin") {
       const ok = await window.ui.confirm({ tone: "warning", title: `¿Dar acceso de admin a ${p.nombre}?`, message: "Podrá manejar todo el inventario.", confirmText: "Hacer admin" });
       if (ok) hecho = await intentar(null, () => cambiarUsuario({ id, rol: "admin" }), `${p.nombre} ahora es admin`);
     }

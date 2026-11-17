@@ -218,12 +218,14 @@ const tipos = Object.entries(TIPO_MOV).map(([value, t]) => ({ value, label: t.la
   import "../lib/ui";
   import { initTableFilter } from "../lib/ui/table-filter";
   import {
-    movimientos, bodegas, bodega, productos, cantidadEn, registrarMovimiento, anularMovimiento, totalMov, totalLocal, unidadesMov, TIPO_MOV, REGLAS, MONEDA, type TipoMov, type Movimiento, rutaMov, metodosDe, metodoPago, esVentaOficina, monedaDe, precioEn, producto,
+    movimientos, bodegas, bodega, productos, cantidadEn, registrarMovimiento, anularMovimiento, totalMov, totalLocal, unidadesMov, TIPO_MOV, REGLAS, MONEDA, type TipoMov, type Movimiento, rutaMov, metodosDe, metodoPago, esVentaOficina, monedaDe, precioEn, producto, miBodega, LADO_BODEGUERO,
   } from "../lib/store";
   import { money, num, day, dayYear, esc, searchText, menu, dsSelect, intentar, parseNum, urlParam, today, flashRow, opcionesLugar, type DsSelectEl } from "../lib/view";
 
   const scope = document.querySelector<HTMLElement>("[data-table]")!;
   const body = scope.querySelector<HTMLElement>("[data-body]")!;
+  // Bodeguero: solo mueve lo de su bodega y no anula
+  const mia = miBodega();
 
   // ── Lista ──
   const de = (m: Movimiento) => rutaMov(m).de;
@@ -235,7 +237,7 @@ const tipos = Object.entries(TIPO_MOV).map(([value, t]) => ({ value, label: t.la
         const t = TIPO_MOV[m.tipo];
         const nombres = m.items.map((i) => producto(i.producto_id)?.nombre);
         const extra = [esVentaOficina(m) ? "Oficina" : "", m.curso, metodoPago(m.metodo_pago_id)?.nombre, m.tipo === "venta" && m.moneda !== MONEDA ? `${money(totalLocal(m), m.moneda)} (1 ${m.moneda} = ${money(m.tasa)})` : "", m.nota].filter(Boolean).join(" · ");
-        const acciones = [{ value: "ver", label: "Ver detalle", icon: "bi-eye" }, ...(m.anulado ? [] : [{ separator: true }, { value: "anular", label: "Anular", icon: "bi-x-circle", danger: true }])];
+        const acciones = [{ value: "ver", label: "Ver detalle", icon: "bi-eye" }, ...(m.anulado || mia ? [] : [{ separator: true }, { value: "anular", label: "Anular", icon: "bi-x-circle", danger: true }])];
         return `<tr data-row data-id="${m.id}" data-tipo="${m.tipo}" data-estado="${m.anulado ? "anulado" : "vigente"}"
             data-ubicacion="${[m.origen_id, m.destino_id].filter(Boolean).join(" ")}" data-text="${esc(searchText(m.id, `#${m.id}`, t.label, m.curso, m.nota, de(m), a(m), ...nombres))}"
             class="${m.anulado ? "anulado" : ""}">
@@ -266,6 +268,12 @@ const tipos = Object.entries(TIPO_MOV).map(([value, t]) => ({ value, label: t.la
   const form = modal.querySelector<HTMLFormElement>("[data-mov-form]")!;
   const sel = (name: string) => dsSelect(form, `ds-select[name=${name}]`);
   const tipo = sel("tipo"), origen = sel("origen"), destino = sel("destino"), metodo = sel("metodo");
+  if (mia)
+    tipo.setOptions(
+      Object.entries(TIPO_MOV)
+        .filter(([k]) => k in LADO_BODEGUERO)
+        .map(([value, x]) => ({ value, label: x.label, hint: `${x.desde} → ${x.hacia}` })),
+    );
   const fecha = form.querySelector<HTMLElement & { value: string }>("ds-date[name=fecha]")!;
   const items = form.querySelector<HTMLElement>("[data-items]")!;
   const tpl = modal.querySelector<HTMLTemplateElement>("[data-item-tpl]")!;
@@ -317,8 +325,13 @@ const tipos = Object.entries(TIPO_MOV).map(([value, t]) => ({ value, label: t.la
       s.setOptions(opts as never);
       if (!opts.some((o) => o.value === s.value)) s.value = "";
     };
-    keep(origen, lugares(r.origen));
-    keep(destino, lugares(r.destino));
+    // Bodeguero: su bodega queda puesta en el lado que le toca; en el otro, los demás lugares
+    const lado = mia ? LADO_BODEGUERO[t()] : undefined;
+    const suya = lugares(["bodega"]).filter((o) => o.value === mia);
+    const otros = (tipos: ("bodega" | "monitor")[] | null) => lugares(tipos).filter((o) => o.value !== mia);
+    keep(origen, lado === "origen" ? suya : mia ? otros(r.origen) : lugares(r.origen));
+    keep(destino, lado === "destino" ? suya : mia ? otros(r.destino) : lugares(r.destino));
+    if (lado) (lado === "origen" ? origen : destino).value = mia;
     // Cómo pagó: los métodos del país de donde sale la venta
     keep(metodo, metodosDe(lugarVenta()?.pais).map((m) => ({ value: String(m.id), label: m.nombre })));
     valorLabel.textContent = t() === "venta" ? (cur() === MONEDA ? "Precio unit." : `Precio (${cur()})`) : "";
@@ -351,7 +364,7 @@ const tipos = Object.entries(TIPO_MOV).map(([value, t]) => ({ value, label: t.la
   function open(preset: { tipo?: string; origen?: string; destino?: string } = {}) {
     form.reset();
     rows().forEach((r) => r.remove());
-    tipo.value = preset.tipo && preset.tipo in TIPO_MOV ? preset.tipo : "compra";
+    tipo.value = preset.tipo && preset.tipo in TIPO_MOV && (!mia || preset.tipo in LADO_BODEGUERO) ? preset.tipo : "compra";
     fecha.value = today();
     metodo.value = "";
     sync();
@@ -439,7 +452,7 @@ const tipos = Object.entries(TIPO_MOV).map(([value, t]) => ({ value, label: t.la
           <td class="num tnum">${cv ? money(i.valor_unitario, m.moneda) : ""}</td></tr>`,
       )
       .join("");
-    det.querySelector<HTMLElement>("[data-det-anular]")!.hidden = m.anulado;
+    det.querySelector<HTMLElement>("[data-det-anular]")!.hidden = m.anulado || !!mia;
     window.ui.openModal("det-modal");
   }
 

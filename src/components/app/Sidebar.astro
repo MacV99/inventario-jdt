@@ -135,9 +135,9 @@ const isActive = (href: string) => href === activeHref;
         label="Cuenta"
         icon="bi-three-dots-vertical"
         items={[
-          role === "admin"
-            ? { value: "as-monitor", label: "Ver como monitor", icon: "bi-phone" }
-            : { value: "as-admin", label: "Ver como admin", icon: "bi-display" },
+          { value: "as-admin", label: "Ver como admin", icon: "bi-display" },
+          { value: "as-bodeguero", label: "Ver como bodeguero", icon: "bi-building" },
+          { value: "as-monitor", label: "Ver como monitor", icon: "bi-phone" },
           { value: "sep", separator: true },
           { value: "logout", label: "Cerrar sesión", icon: "bi-box-arrow-right" },
         ]}
@@ -491,7 +491,7 @@ const isActive = (href: string) => href === activeHref;
 
   // Cuenta: quién entró, «Ver como» (solo en la prueba local) y cerrar sesión
   import "../../lib/ui";
-  import { yo, ROL, DEMO, verComo, olvidar, paises, paisActual, elegirPais } from "../../lib/store";
+  import { yo, ROL, DEMO, verComo, olvidar, paises, paisActual, elegirPais, PAGINAS_BODEGUERO } from "../../lib/store";
   import { salir } from "../../lib/api";
   import { avatar } from "../../lib/view";
 
@@ -506,19 +506,31 @@ const isActive = (href: string) => href === activeHref;
     });
   }
 
-  const chip = document.querySelector<HTMLElement>("[data-user-chip]")!;
   const me = yo();
+  // Bodeguero: el menú de admin, pero solo con sus pantallas y sin elegir país
+  if (me.rol === "bodeguero") {
+    document.querySelector(".pais-pick")?.remove();
+    document.querySelectorAll<HTMLAnchorElement>("#main-nav nav a").forEach((a) => {
+      if (!PAGINAS_BODEGUERO.includes(a.getAttribute("href")!)) a.closest("li")!.remove();
+    });
+    document.querySelectorAll("#main-nav nav .group").forEach((g) => !g.querySelector("li") && g.remove());
+    document.querySelectorAll<HTMLAnchorElement>(".brand, .mobile-brand").forEach((a) => (a.href = "/inventario"));
+  }
+
+  const chip = document.querySelector<HTMLElement>("[data-user-chip]")!;
   chip.querySelector("[data-me-name]")!.textContent = me.nombre;
   chip.querySelector("[data-me-rol]")!.textContent = DEMO ? `${ROL[me.rol].label} · ejemplo` : ROL[me.rol].label;
   chip.querySelector(".user-link")!.setAttribute("data-tip", me.nombre);
   chip.querySelector(".avatar")?.replaceWith(document.createRange().createContextualFragment(avatar(me.nombre)));
-  if (!DEMO) chip.querySelectorAll('[data-value="as-monitor"], [data-value="as-admin"], .option-sep').forEach((el) => el.remove());
+  if (!DEMO) chip.querySelectorAll('[data-value^="as-"], .option-sep').forEach((el) => el.remove());
+  else chip.querySelector(`[data-value="as-${me.rol === "superadmin" ? "admin" : me.rol}"]`)?.remove();
 
   chip.addEventListener("menu-select", async (e) => {
     const { value } = (e as CustomEvent<{ value: string }>).detail;
-    if (value === "as-monitor" || value === "as-admin") {
-      verComo(value === "as-monitor" ? "monitor" : "admin");
-      location.href = value === "as-monitor" ? "/mi-maleta" : "/";
+    if (value.startsWith("as-")) {
+      const ver = value.slice(3) as "admin" | "monitor" | "bodeguero";
+      verComo(ver);
+      location.href = ver === "monitor" ? "/mi-maleta" : ver === "bodeguero" ? "/inventario" : "/";
     }
     if (value === "logout") {
       await salir();

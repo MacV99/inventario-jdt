@@ -253,4 +253,42 @@ select t_ok(exists (select 1 from jsonb_array_elements(public.inv_datos()->'prod
 select t_espera_error($q$select public.inv_pago_anular(1)$q$, 'No tienes permiso');
 reset role;
 
+-- 20. Bodeguero (2026-11-17): jefe de una bodega. Lo crea un admin; mueve solo lo de su bodega.
+select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-00000000000b', false);
+select t_espera_error($q$select public.inv_usuario_crear('{"usuario":"pedro","nombre":"Pedro Ortiz","password":"clave-segura","rol":"bodeguero"}')$q$, 'Elige su bodega');
+select public.inv_usuario_crear(jsonb_build_object('usuario','pedro','nombre','Pedro Ortiz','password','clave-segura','rol','bodeguero',
+  'bodega_id',(select id from inventario.bodegas where nombre='Bodega Lima')));
+select t_ok((select rol = 'bodeguero' and bodega_id = (select id from inventario.bodegas where nombre='Bodega Lima') from inventario.perfiles where usuario='pedro'), 'admin crea un bodeguero con su bodega');
+select set_config('request.jwt.claim.sub', (select id::text from inventario.perfiles where usuario='pedro'), false);
+select t_ok((public.inv_datos()->'yo'->>'bodega_id') = (select id::text from inventario.bodegas where nombre='Bodega Lima'), 'el bodeguero sabe cuál es su bodega');
+select t_ok(public.inv_datos()->'costos' = '{}'::jsonb and jsonb_array_length(public.inv_datos()->'pagos') = 0
+  and jsonb_array_length(public.inv_datos()->'proveedores') = 0 and jsonb_array_length(public.inv_datos()->'perfiles') = 1, 'el bodeguero no ve costos, dinero, proveedores ni usuarios');
+select public.inv_registrar(jsonb_build_object('tipo','compra','destino_id',(select id from inventario.bodegas where nombre='Bodega Lima'),'proveedor_nuevo','Sin proveedor',
+  'items',jsonb_build_array(jsonb_build_object('producto_id',(select id from inventario.productos where codigo='LIB-001'),'cantidad',10))));
+select t_ok((select bool_and(s->>0 = (select id::text from inventario.bodegas where nombre='Bodega Lima')) from jsonb_array_elements(public.inv_datos()->'stock') s), 'el bodeguero solo ve el stock de su bodega');
+select t_ok((select bool_and(m->>'origen_id' = b or m->>'destino_id' = b) from jsonb_array_elements(public.inv_datos()->'movimientos') m,
+  (select id::text b from inventario.bodegas where nombre='Bodega Lima') x), 'el bodeguero solo ve movimientos de su bodega');
+select public.inv_registrar(jsonb_build_object('tipo','entrega','origen_id',(select id from inventario.bodegas where nombre='Bodega Lima'),
+  'destino_id',(select id from inventario.bodegas where nombre='Maleta Jheiner P'),'items',jsonb_build_array(jsonb_build_object('producto_id',(select id from inventario.productos where codigo='LIB-001'),'cantidad',2))));
+select t_espera_error(format($q$select public.inv_registrar('{"tipo":"ajuste_entrada","destino_id":"%s","items":[{"producto_id":"%s","cantidad":1}]}')$q$,
+  (select id from inventario.bodegas where nombre='Bodega Bogotá'), (select id from inventario.productos where codigo='LIB-001')), 'de tu bodega');
+select t_espera_error(format($q$select public.inv_registrar('{"tipo":"traslado","origen_id":"%s","destino_id":"%s","items":[{"producto_id":"%s","cantidad":1}]}')$q$,
+  (select id from inventario.bodegas where nombre='Bodega Bogotá'), (select id from inventario.bodegas where nombre='Bodega Lima'), (select id from inventario.productos where codigo='LIB-001')), 'de tu bodega');
+select t_espera_error(format($q$select public.inv_registrar('{"tipo":"venta","origen_id":"%s","metodo_pago_id":1,"items":[{"producto_id":"%s","cantidad":1,"valor_unitario":60}]}')$q$,
+  (select id from inventario.bodegas where nombre='Bodega Lima'), (select id from inventario.productos where codigo='LIB-001')), 'de tu bodega');
+select t_espera_error('select public.inv_anular(1001)', 'No tienes permiso');
+select t_espera_error($q$select public.inv_usuario_crear('{"usuario":"otro","nombre":"Otro X","password":"12345678","rol":"monitor","pais":"Colombia"}')$q$, 'No tienes permiso');
+select t_espera_error($q$select public.inv_guardar('productos', '{"codigo":"X-1","nombre":"X"}')$q$, 'No tienes permiso');
+select t_ok(true, 'el bodeguero no mueve otras bodegas, no vende, no anula ni crea');
+-- el admin le cambia la bodega; no lo puede hacer admin; el superadmin sí (y queda sin bodega)
+select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-00000000000b', false);
+select public.inv_usuario_cambiar(jsonb_build_object('id',(select id from inventario.perfiles where usuario='pedro'),'bodega_id',(select id from inventario.bodegas where nombre='Bodega Bogotá')));
+select t_ok((select bodega_id = (select id from inventario.bodegas where nombre='Bodega Bogotá') from inventario.perfiles where usuario='pedro'), 'admin cambia la bodega del bodeguero');
+select t_espera_error(format($q$select public.inv_usuario_cambiar('{"id":"%s","bodega_id":"%s"}')$q$, (select id from inventario.perfiles where usuario='pedro'),
+  (select id from inventario.bodegas where nombre='Maleta Jheiner P')), 'Elige su bodega');
+select t_espera_error(format($q$select public.inv_usuario_cambiar('{"id":"%s","rol":"admin"}')$q$, (select id from inventario.perfiles where usuario='pedro')), 'Solo el superadmin');
+select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-00000000000a', false);
+select public.inv_usuario_cambiar(jsonb_build_object('id',(select id from inventario.perfiles where usuario='pedro'),'rol','admin'));
+select t_ok((select rol = 'admin' and bodega_id is null from inventario.perfiles where usuario='pedro'), 'al pasar a admin queda sin bodega');
+
 \echo TODAS LAS PRUEBAS PASARON

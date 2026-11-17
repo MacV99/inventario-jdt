@@ -9,12 +9,13 @@
 
 import { conBase, haySesion, sesionId, rpc, aEntrar, irA } from "./api";
 
-export type Rol = "superadmin" | "admin" | "monitor";
+/** bodeguero: jefe de una bodega (ve y mueve solo lo de su bodega). */
+export type Rol = "superadmin" | "admin" | "monitor" | "bodeguero";
 export type TipoMov = "compra" | "traslado" | "entrega" | "devolucion" | "entre_maletas" | "venta" | "ajuste_entrada" | "ajuste_salida";
 export type TipoBodega = "bodega" | "monitor";
 
 /** propio = se creó en el inventario (su contraseña se cambia aquí; la de alguien del call center se cambia allá). */
-export interface Perfil { id: string; nombre: string; usuario: string; rol: Rol; activo: boolean; creado: string; propio: boolean }
+export interface Perfil { id: string; nombre: string; usuario: string; rol: Rol; bodega_id?: string | null; activo: boolean; creado: string; propio: boolean }
 export interface Bodega { id: string; nombre: string; ciudad: string; pais: string; tipo: TipoBodega; monitor_id?: string | null; activa: boolean }
 /** precios: país → precio de venta en la moneda de ese país (sin precio = no está). */
 export interface Producto { id: string; codigo: string; nombre: string; unidad: string; precios: Record<string, number>; stock_minimo: number; activo: boolean }
@@ -42,7 +43,7 @@ export interface Movimiento {
 }
 /** Dinero que un monitor entrega de sus ventas. */
 export interface Pago { id: number; bodega_id: string; fecha: string; valor: number; moneda: string; metodo_pago_id?: number | null; nota?: string | null; anulado?: boolean; creado_por: string }
-export interface Yo { id: string; nombre: string; usuario: string; rol: Rol }
+export interface Yo { id: string; nombre: string; usuario: string; rol: Rol; bodega_id?: string | null }
 
 interface State {
   version: number;
@@ -110,12 +111,25 @@ export const ROL: Record<Rol, { label: string }> = {
   superadmin: { label: "Superadmin" },
   admin: { label: "Admin" },
   monitor: { label: "Monitor" },
+  bodeguero: { label: "Bodeguero" },
+};
+
+/** Pantallas del bodeguero (las demás lo mandan a Inventario). */
+export const PAGINAS_BODEGUERO = ["/inventario", "/movimientos"];
+/** Tipos que registra el bodeguero y qué lado tiene que ser su bodega. */
+export const LADO_BODEGUERO: Partial<Record<TipoMov, "origen" | "destino">> = {
+  compra: "destino",
+  ajuste_entrada: "destino",
+  devolucion: "destino",
+  traslado: "origen",
+  entrega: "origen",
+  ajuste_salida: "origen",
 };
 
 const KEY_DEMO = "jdt-inventario-demo";
 const KEY_CACHE = "jdt-inv-datos";
 const KEY_VER = "jdt-inv-ver-como";
-const VERSION = 6;
+const VERSION = 7;
 const hoy = () => new Date().toLocaleDateString("en-CA"); // AAAA-MM-DD en la hora local
 
 /** Prueba local sin sesión: datos de ejemplo (también en una copia armada con PUBLIC_DEMO=1). En la página publicada nunca. */
@@ -150,13 +164,14 @@ function usar(datos: Omit<State, "version">) {
 
 async function iniciar() {
   const pagina = document.body.dataset.rol as "admin" | "monitor" | undefined;
+  type Ver = "admin" | "monitor" | "bodeguero";
 
   if (DEMO) {
     const saved = leerJson<State>(KEY_DEMO);
     cache = saved?.version === VERSION ? saved : seed();
-    const ver = (localStorage.getItem(KEY_VER) as "admin" | "monitor" | null) ?? pagina ?? "admin";
-    const p = cache.perfiles.find((x) => (ver === "monitor" ? x.id === "u3" : x.id === "u1"))!;
-    cache.yo = { id: p.id, nombre: p.nombre, usuario: p.usuario, rol: p.rol };
+    const ver = (localStorage.getItem(KEY_VER) as Ver | null) ?? pagina ?? "admin";
+    const p = cache.perfiles.find((x) => x.id === (ver === "monitor" ? "u3" : ver === "bodeguero" ? "u6" : "u1"))!;
+    cache.yo = { id: p.id, nombre: p.nombre, usuario: p.usuario, rol: p.rol, bodega_id: p.bodega_id };
   } else {
     if (!haySesion()) return aEntrar();
     const guardado = leerJson<State>(KEY_CACHE);
@@ -195,9 +210,12 @@ async function iniciar() {
   }
 
   // Cada quien en sus pantallas
-  const esAdmin = cache.yo.rol !== "monitor";
-  if (pagina === "admin" && !esAdmin) irA("/mi-maleta");
-  if (pagina === "monitor" && esAdmin && !DEMO) irA("/");
+  const rol = cache.yo.rol;
+  const ruta = location.pathname.replace(/\/$/, "") || "/";
+  if (rol === "bodeguero") {
+    if (pagina === "monitor" || !PAGINAS_BODEGUERO.includes(ruta)) irA("/inventario");
+  } else if (pagina === "admin" && rol === "monitor") irA("/mi-maleta");
+  else if (pagina === "monitor" && rol !== "monitor" && !DEMO) irA("/");
 }
 
 // Solo en el navegador (al armar la página en el servidor no hay datos que cargar)
@@ -210,8 +228,8 @@ export const olvidar = () => {
   } catch {}
 };
 
-/** Prueba local: cambiar entre admin y monitor. */
-export function verComo(rol: "admin" | "monitor") {
+/** Prueba local: cambiar entre admin, bodeguero y monitor. */
+export function verComo(rol: "admin" | "monitor" | "bodeguero") {
   try {
     localStorage.setItem(KEY_VER, rol);
   } catch {}
@@ -235,7 +253,7 @@ export function reiniciar() {
 // ── País elegido ─────────────────────────────────────────────────────
 // El admin trabaja un país a la vez (se elige arriba en el menú y se recuerda en este navegador).
 // Con un país elegido, bodegas, maletas, movimientos, pagos y stock muestran solo los de ese país.
-// Vacío = global (todos los países). Los monitores no eligen: ya ven solo lo suyo.
+// Vacío = global (todos los países). Monitores y bodegueros no eligen: ya ven solo lo suyo.
 const KEY_PAIS = "jdt-inv-pais";
 let paisElegido: string | undefined;
 export const paisActual = () => {
@@ -244,7 +262,7 @@ export const paisActual = () => {
   try {
     p = localStorage.getItem(KEY_PAIS) ?? "";
   } catch {}
-  paisElegido = load().yo.rol !== "monitor" && load().paises.some((x) => x.nombre === p) ? p : "";
+  paisElegido = esAdmin() && load().paises.some((x) => x.nombre === p) ? p : "";
   return paisElegido;
 };
 export function elegirPais(p: string) {
@@ -256,10 +274,13 @@ export function elegirPais(p: string) {
 }
 /** ¿El lugar es del país elegido? (global = todos) */
 const delPais = (id?: string | null) => !!id && (!paisActual() || load().bodegas.find((b) => b.id === id)?.pais === paisActual());
+/** La bodega del bodeguero (los demás: vacío). La base ya le manda solo lo suyo; en el ejemplo se filtra aquí. */
+export const miBodega = () => (load().yo.rol === "bodeguero" ? load().yo.bodega_id ?? "" : "");
+const mio = (id?: string | null) => !miBodega() || id === miBodega();
 
 // ── Lecturas ─────────────────────────────────────────────────────────
 export const yo = () => load().yo;
-export const esAdmin = () => load().yo.rol !== "monitor";
+export const esAdmin = () => load().yo.rol === "admin" || load().yo.rol === "superadmin";
 export const perfiles = () => load().perfiles;
 /** Bodegas y maletas del país elegido. */
 export const bodegas = () => (paisActual() ? load().bodegas.filter((b) => b.pais === paisActual()) : load().bodegas);
@@ -287,7 +308,10 @@ export const monedaDe = (b?: { pais: string } | null) => {
 /** Precio de venta de un producto en un país (0 = sin precio ahí). */
 export const precioEn = (productoId: string, paisNombre?: string | null) => (paisNombre && producto(productoId)?.precios[paisNombre]) || 0;
 /** Del más nuevo al más viejo (se agregan en orden, así que basta invertir). */
-export const movimientos = () => load().movimientos.filter((m) => !paisActual() || delPais(m.origen_id) || delPais(m.destino_id)).reverse();
+export const movimientos = () =>
+  load()
+    .movimientos.filter((m) => (!paisActual() || delPais(m.origen_id) || delPais(m.destino_id)) && (mio(m.origen_id) || mio(m.destino_id)))
+    .reverse();
 export const pagos = () => load().pagos.filter((p) => delPais(p.bodega_id)).sort((a, b) => b.id - a.id);
 export const bodega = (id?: string | null) => load().bodegas.find((b) => b.id === id);
 export const producto = (id: string) => load().productos.find((p) => p.id === id);
@@ -321,7 +345,7 @@ export function stock(state = load()) {
 }
 
 /** Filas de stock con cantidad > 0. */
-export const stockFilas = () => (memo.filas ??= calcFilas().filter((f) => delPais(f.bodega_id)));
+export const stockFilas = () => (memo.filas ??= calcFilas().filter((f) => delPais(f.bodega_id) && mio(f.bodega_id)));
 
 function calcFilas() {
   const costos = costoPromedio();
@@ -508,6 +532,10 @@ function registrarLocal(input: NuevoMovimiento, state: State): Movimiento {
   const o = state.bodegas.find((b) => b.id === input.origen_id);
   const d = state.bodegas.find((b) => b.id === input.destino_id);
   if (state.yo?.rol === "monitor" && (input.tipo !== "venta" || o?.monitor_id !== state.yo.id)) throw new Error("Solo puedes registrar ventas de tu maleta.");
+  if (state.yo?.rol === "bodeguero") {
+    const lado = LADO_BODEGUERO[input.tipo];
+    if (!lado || (lado === "origen" ? o : d)?.id !== state.yo.bodega_id) throw new Error("Solo puedes mover mercancía de tu bodega.");
+  }
   if (r.origen && !o) throw new Error("Elige de dónde sale.");
   if (r.destino && !d) throw new Error("Elige a dónde entra.");
   if (r.origen && !r.origen.includes(o!.tipo)) throw new Error(`El origen debe ser ${r.origen.includes("bodega") ? "una bodega" : "una maleta"}.`);
@@ -731,7 +759,9 @@ export async function setActivo(tipo: "producto" | "bodega", id: string, activo:
 }
 
 // ── Usuarios ─────────────────────────────────────────────────────────
-export interface NuevoUsuario { usuario: string; nombre: string; password: string; rol: "admin" | "monitor"; ciudad?: string; pais?: string }
+export interface NuevoUsuario { usuario: string; nombre: string; password: string; rol: "admin" | "monitor" | "bodeguero"; ciudad?: string; pais?: string; bodega_id?: string }
+/** Bodega válida para un bodeguero (una bodega activa, no una maleta). */
+const bodegaValida = (id?: string | null) => !!load().bodegas.find((b) => b.id === id && b.tipo === "bodega" && b.activa);
 
 /** Crea un usuario (sin correo). Si ya existe en el call center, se le da acceso y entra con su misma contraseña. */
 export async function crearUsuario(u: NuevoUsuario): Promise<{ existente: boolean }> {
@@ -742,32 +772,38 @@ export async function crearUsuario(u: NuevoUsuario): Promise<{ existente: boolea
   if (u.nombre.trim().length < 3) throw new Error("Escribe nombre y apellido.");
   if (s.perfiles.some((p) => p.usuario === usuario)) throw new Error("Ese usuario ya está en el inventario.");
   if (u.password.length < 8) throw new Error("La contraseña debe tener al menos 8 caracteres.");
-  if (yo().rol === "admin" && u.rol !== "monitor") throw new Error("Solo el superadmin crea admins.");
+  if (yo().rol === "admin" && u.rol === "admin") throw new Error("Solo el superadmin crea admins.");
   if (u.rol === "monitor" && !pais(u.pais)) throw new Error("Elige el país de su maleta.");
-  const p: Perfil = { id: nuevoId("u", s.perfiles), nombre: u.nombre.trim(), usuario, rol: u.rol, activo: true, creado: hoy(), propio: true };
+  if (u.rol === "bodeguero" && !bodegaValida(u.bodega_id)) throw new Error("Elige su bodega.");
+  const p: Perfil = { id: nuevoId("u", s.perfiles), nombre: u.nombre.trim(), usuario, rol: u.rol, bodega_id: u.rol === "bodeguero" ? u.bodega_id : null, activo: true, creado: hoy(), propio: true };
   s.perfiles.push(p);
   if (u.rol === "monitor") s.bodegas.push({ id: nuevoId("m", s.bodegas.filter((x) => x.tipo === "monitor")), nombre: `Maleta ${p.nombre}`, ciudad: u.ciudad ?? "", pais: u.pais ?? "", tipo: "monitor", monitor_id: p.id, activa: true });
   saveDemo();
   return { existente: false };
 }
 
-/** Cambia rol, nombre, contraseña o acceso de un usuario. */
-export async function cambiarUsuario(c: { id: string; rol?: "admin" | "monitor"; nombre?: string; password?: string; activo?: boolean; ciudad?: string; pais?: string }) {
+/** Cambia rol, nombre, contraseña, acceso o bodega de un usuario. El admin cambia a monitores y bodegueros. */
+export async function cambiarUsuario(c: { id: string; rol?: "admin" | "monitor" | "bodeguero"; nombre?: string; password?: string; activo?: boolean; ciudad?: string; pais?: string; bodega_id?: string }) {
   if (!DEMO) return void (await llamar("inv_usuario_cambiar", { p: c }));
   const s = load();
   const p = s.perfiles.find((x) => x.id === c.id)!;
   if (p.rol === "superadmin" || p.id === yo().id) throw new Error("Ese usuario no se cambia aquí.");
-  if (yo().rol === "admin" && (p.rol !== "monitor" || (c.rol ?? "monitor") !== "monitor")) throw new Error("Solo el superadmin cambia a los admins.");
+  if (yo().rol === "admin" && (p.rol === "admin" || c.rol === "admin")) throw new Error("Solo el superadmin cambia a los admins.");
+  const bodegaNueva = (c.rol ?? p.rol) === "bodeguero" ? c.bodega_id || p.bodega_id : null;
+  if ((c.rol ?? p.rol) === "bodeguero" && !(c.bodega_id ? bodegaValida(c.bodega_id) : bodegaNueva)) throw new Error("Elige su bodega.");
   if (c.password !== undefined) {
     if (c.password.length < 8) throw new Error("La contraseña debe tener al menos 8 caracteres.");
     if (!p.propio) throw new Error("Este usuario también entra al call center: su contraseña se cambia allá.");
   }
   if (c.rol) p.rol = c.rol;
+  p.bodega_id = bodegaNueva;
   if (c.nombre?.trim()) p.nombre = c.nombre.trim();
   if (c.activo !== undefined) p.activo = c.activo;
   if (c.pais && !pais(c.pais)) throw new Error(`El país «${c.pais}» no está en Países y monedas.`);
   const maleta = s.bodegas.find((b) => b.monitor_id === p.id);
-  if (maleta) Object.assign(maleta, { ciudad: c.ciudad || maleta.ciudad, pais: c.pais || maleta.pais });
+  if (p.rol === "bodeguero") {
+    // sin maleta que cambiar
+  } else if (maleta) Object.assign(maleta, { ciudad: c.ciudad || maleta.ciudad, pais: c.pais || maleta.pais });
   else if (p.rol === "monitor") {
     if (!c.pais) throw new Error("Elige el país de su maleta.");
     s.bodegas.push({ id: nuevoId("m", s.bodegas.filter((x) => x.tipo === "monitor")), nombre: `Maleta ${p.nombre}`, ciudad: c.ciudad ?? "", pais: c.pais, tipo: "monitor", monitor_id: p.id, activa: true });
@@ -826,6 +862,7 @@ function seed(): State {
       { id: "u3", nombre: "Carlos Rojas", usuario: "carlos", rol: "monitor", activo: true, creado: "2026-10-03", propio: true },
       { id: "u4", nombre: "Andrea Gómez", usuario: "andrea", rol: "monitor", activo: true, creado: "2026-10-04", propio: true },
       { id: "u5", nombre: "Luis Pérez", usuario: "luis", rol: "monitor", activo: true, creado: "2026-10-06", propio: true },
+      { id: "u6", nombre: "Pedro Ortiz", usuario: "pedro", rol: "bodeguero", bodega_id: "b6", activo: true, creado: "2026-11-17", propio: true },
     ],
     bodegas: [
       { id: "b1", nombre: "Bodega Bogotá", ciudad: "Bogotá", pais: "Colombia", tipo: "bodega", activa: true },
