@@ -9,6 +9,7 @@ import Select from "../components/ui/Select.astro";
 import Modal from "../components/ui/Modal.astro";
 import FormError from "../components/ui/FormError.astro";
 import PasswordInput from "../components/ui/PasswordInput.astro";
+import CrearRapido from "../components/app/CrearRapido.astro";
 ---
 
 <AppLayout title="Usuarios">
@@ -65,12 +66,12 @@ import PasswordInput from "../components/ui/PasswordInput.astro";
       </div>
       <div class="field span-2" data-bodega>
         <span class="label">Bodega a su cargo</span>
-        <Select name="bodega" searchable placeholder="Elegir bodega" options={[]} />
+        <Select name="bodega" searchable creatable createLabel="Crear bodega" placeholder="Elegir bodega" options={[]} />
       </div>
       <p class="muted small span-2" data-bodega>Ve y mueve solo la mercancía de esa bodega.</p>
       <div class="field" data-maleta>
         <span class="label">País</span>
-        <Select name="pais" searchable placeholder="Elegir país" options={[]} />
+        <Select name="pais" searchable creatable createLabel="Crear país" placeholder="Elegir país" options={[]} />
       </div>
       <div class="field" data-maleta>
         <span class="label">Ciudad</span>
@@ -100,7 +101,7 @@ import PasswordInput from "../components/ui/PasswordInput.astro";
       <div class="span-2"><FormError /></div>
       <div class="field span-2">
         <span class="label">Bodega</span>
-        <Select name="bodega" searchable placeholder="Elegir bodega" options={[]} />
+        <Select name="bodega" searchable creatable createLabel="Crear bodega" placeholder="Elegir bodega" options={[]} />
       </div>
       <p class="muted small span-2">Ve y mueve solo la mercancía de esa bodega.</p>
     </form>
@@ -114,7 +115,7 @@ import PasswordInput from "../components/ui/PasswordInput.astro";
       <div class="span-2"><FormError /></div>
       <div class="field">
         <span class="label">País</span>
-        <Select name="pais" searchable placeholder="Elegir país" options={[]} />
+        <Select name="pais" searchable creatable createLabel="Crear país" placeholder="Elegir país" options={[]} />
       </div>
       <div class="field">
         <span class="label">Ciudad</span>
@@ -125,11 +126,13 @@ import PasswordInput from "../components/ui/PasswordInput.astro";
     <button slot="footer" type="button" class="btn btn-ghost" data-modal-close>Cancelar</button>
     <button slot="footer" type="button" class="btn btn-primary" data-save>Guardar</button>
   </Modal>
+  <CrearRapido />
 </AppLayout>
 
 <script>
   import "../lib/ui";
   import { initTableFilter } from "../lib/ui/table-filter";
+  import { conCrearPais, conCrearBodega } from "../lib/crear-rapido";
   import { perfiles, todasBodegas, bodegas, bodega, paises, maletaDe, crearUsuario, cambiarUsuario, yo, ROL, type Perfil } from "../lib/store";
   import { day, esc, searchText, menu, avatar, intentar, dsSelect, uniqueOptions, flashRow, opcionesLugar as lugaresOpc, sinNuevo as texto, type DsSelectEl } from "../lib/view";
 
@@ -204,6 +207,8 @@ import PasswordInput from "../components/ui/PasswordInput.astro";
     form.querySelectorAll<HTMLElement>("[data-bodega]").forEach((el) => (el.hidden = rol.value !== "bodeguero"));
   };
   pais.addEventListener("change", opciones);
+  conCrearPais(pais, opciones);
+  conCrearBodega(bod, () => bod.setOptions(opcionesBodega()));
   rol.addEventListener("change", verMaleta);
   // Usuario sugerido: primer nombre en minúsculas y sin tildes
   field("nombre").addEventListener("input", () => {
@@ -266,6 +271,7 @@ import PasswordInput from "../components/ui/PasswordInput.astro";
   const bModal = document.getElementById("bodega-modal")!;
   const bForm = bModal.querySelector<HTMLFormElement>("[data-form]")!;
   const bSel = dsSelect(bForm, "ds-select[name=bodega]");
+  conCrearBodega(bSel, () => bSel.setOptions(opcionesBodega()));
   let aCargo: { p: Perfil; aBodeguero: boolean } | null = null;
   function abrirBodega(p: Perfil, aBodeguero: boolean) {
     aCargo = { p, aBodeguero };
@@ -298,6 +304,7 @@ import PasswordInput from "../components/ui/PasswordInput.astro";
   const lPais = dsSelect(lForm, "ds-select[name=pais]");
   const lCiudad = dsSelect(lForm, "ds-select[name=ciudad]");
   lPais.addEventListener("change", () => opcionesLugar(lPais, lCiudad));
+  conCrearPais(lPais, () => opcionesLugar(lPais, lCiudad));
   let lugar: { p: Perfil; aMonitor: boolean } | null = null;
   function abrirLugar(p: Perfil, aMonitor: boolean) {
     lugar = { p, aMonitor };

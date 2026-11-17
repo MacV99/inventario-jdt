@@ -5,6 +5,7 @@ import PageHeader from "../components/ui/PageHeader.astro";
 import Select from "../components/ui/Select.astro";
 import Modal from "../components/ui/Modal.astro";
 import FormError from "../components/ui/FormError.astro";
+import CrearRapido from "../components/app/CrearRapido.astro";
 ---
 
 <AppLayout title="Bodegas">
@@ -43,7 +44,7 @@ import FormError from "../components/ui/FormError.astro";
       <div class="span-2"><FormError /></div>
       <div class="field">
         <span class="label">País</span>
-        <Select name="pais" searchable placeholder="Elegir país" options={[]} />
+        <Select name="pais" searchable creatable createLabel="Crear país" placeholder="Elegir país" options={[]} />
         <span class="hint">¿No está? Agrégalo en <a href="/paises">Países y monedas</a>.</span>
       </div>
       <div class="field">
@@ -59,6 +60,7 @@ import FormError from "../components/ui/FormError.astro";
     <button slot="footer" type="button" class="btn btn-ghost" data-modal-close>Cancelar</button>
     <button slot="footer" type="button" class="btn btn-primary" data-save>Guardar</button>
   </Modal>
+  <CrearRapido />
 </AppLayout>
 
 <script>
@@ -66,6 +68,7 @@ import FormError from "../components/ui/FormError.astro";
   import { initTableFilter } from "../lib/ui/table-filter";
   import { bodegas, todasBodegas, bodega, paises, paisActual, guardarBodega, setActivo } from "../lib/store";
   import { esc, searchText, menu, intentar, dsSelect, uniqueOptions, flashRow, sinNuevo as texto } from "../lib/view";
+  import { conCrearPais } from "../lib/crear-rapido";
 
   const scope = document.querySelector<HTMLElement>("[data-table]")!;
   const body = scope.querySelector<HTMLElement>("[data-body]")!;
@@ -111,6 +114,7 @@ import FormError from "../components/ui/FormError.astro";
     ciudad.setOptions(uniqueOptions(bs.filter((b) => !p || b.pais === p).map((b) => b.ciudad)));
   }
   pais.addEventListener("change", opciones);
+  conCrearPais(pais, opciones);
   ciudad.addEventListener("change", () => {
     if (nombreAuto && ciudad.value) nombre.value = `Bodega ${texto(ciudad.value)}`;
   });

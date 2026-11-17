@@ -83,7 +83,7 @@ import FormError from "../components/ui/FormError.astro";
       </div>
       <div class="field span-2">
         <span class="label">¿Cómo lo entregó?</span>
-        <Select name="metodo" placeholder="Elegir (opcional)" options={[]} />
+        <Select name="metodo" searchable creatable createLabel="Crear método" placeholder="Elegir (opcional)" options={[]} />
       </div>
       <div class="field span-2">
         <label for="dn-nota">Nota</label>
@@ -101,6 +101,7 @@ import FormError from "../components/ui/FormError.astro";
   import { setKpi } from "../lib/ui/kpi";
   import { cuadre, stockFilas, bodega, producto, ventas, pagos, totalLocal, registrarPago, anularPago, metodosDe, monedaDe, precioEn } from "../lib/store";
   import { money, num, day, esc, searchText, menu, avatar, intentar, parseNum, flashRow, dsSelect } from "../lib/view";
+  import { conCrearMetodo } from "../lib/crear-rapido";
 
   const scope = document.querySelector<HTMLElement>("[data-table]")!;
   const body = scope.querySelector<HTMLElement>("[data-body]")!;
@@ -197,11 +198,13 @@ import FormError from "../components/ui/FormError.astro";
   const dinero = document.getElementById("dinero-modal")!;
   const form = dinero.querySelector<HTMLFormElement>("[data-form]")!;
   const metodo = dsSelect(form, "ds-select[name=metodo]");
+  const opcionesMetodo = () => metodo.setOptions(metodosDe(bodega(actual)?.pais).map((m) => ({ value: String(m.id), label: m.nombre })));
+  conCrearMetodo(metodo, () => bodega(actual)?.pais, opcionesMetodo);
   let actual = "";
   function abrirDinero(id: string) {
     actual = id;
     form.reset();
-    metodo.setOptions(metodosDe(bodega(id)?.pais).map((m) => ({ value: String(m.id), label: m.nombre })));
+    opcionesMetodo();
     metodo.value = "";
     intentar(form, () => {});
     const c = cuadre().find((x) => x.bodega.id === id)!;

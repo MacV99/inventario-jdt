@@ -1,0 +1,55 @@
+---
+// Ventanas para crear un país o una bodega sin salir del formulario donde se está eligiendo.
+// Se ponen una vez en la página; la lógica está en lib/crear-rapido.ts (conCrearPais, conCrearBodega).
+import Modal from "../ui/Modal.astro";
+import Select from "../ui/Select.astro";
+import FormError from "../ui/FormError.astro";
+import { MONEDAS } from "../../lib/store";
+---
+
+<Modal id="rapido-pais" title="Nuevo país" description="Las ventas de sus bodegas y monitores quedan en su moneda.">
+  <form class="form-grid" data-form novalidate>
+    <div class="span-2"><FormError /></div>
+    <div class="field">
+      <label for="rp-nombre">País</label>
+      <input id="rp-nombre" name="nombre" class="input" placeholder="Ej. Perú" />
+    </div>
+    <div class="field">
+      <span class="label">Moneda</span>
+      <Select name="moneda" searchable placeholder="Elegir moneda" options={MONEDAS} />
+    </div>
+    <div class="field span-2" data-tasa>
+      <label for="rp-tasa" data-tasa-label>¿Cuántos pesos vale 1?</label>
+      <input id="rp-tasa" name="tasa" class="input tnum" type="text" inputmode="decimal" data-money placeholder="Ej. 1.100" />
+      <span class="hint">Para sumar todo en pesos. Se puede cambiar después en Países y monedas.</span>
+    </div>
+  </form>
+  <button slot="footer" type="button" class="btn btn-ghost" data-modal-close>Cancelar</button>
+  <button slot="footer" type="button" class="btn btn-primary" data-save>Crear país</button>
+</Modal>
+
+<Modal id="rapido-bodega" title="Nueva bodega">
+  <form class="form-grid" data-form novalidate>
+    <div class="span-2"><FormError /></div>
+    <div class="field">
+      <span class="label">País</span>
+      <Select name="pais" searchable creatable createLabel="Crear país" placeholder="Elegir país" options={[]} />
+    </div>
+    <div class="field">
+      <span class="label">Ciudad</span>
+      <Select name="ciudad" searchable creatable createLabel="Crear ciudad" placeholder="Elegir ciudad" options={[]} />
+    </div>
+    <div class="field span-2">
+      <label for="rb-nombre">Nombre</label>
+      <input id="rb-nombre" name="nombre" class="input" placeholder="Ej. Bodega Cali" />
+    </div>
+  </form>
+  <button slot="footer" type="button" class="btn btn-ghost" data-modal-close>Cancelar</button>
+  <button slot="footer" type="button" class="btn btn-primary" data-save>Crear bodega</button>
+</Modal>
+
+<style>
+  [data-tasa][hidden] {
+    display: none;
+  }
+</style>

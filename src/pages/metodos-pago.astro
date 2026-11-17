@@ -7,6 +7,7 @@ import PageHeader from "../components/ui/PageHeader.astro";
 import Modal from "../components/ui/Modal.astro";
 import FormError from "../components/ui/FormError.astro";
 import Select from "../components/ui/Select.astro";
+import CrearRapido from "../components/app/CrearRapido.astro";
 ---
 
 <AppLayout title="Métodos de pago">
@@ -45,13 +46,14 @@ import Select from "../components/ui/Select.astro";
       </div>
       <div class="field span-2">
         <span class="label">País</span>
-        <Select name="pais" searchable label="País" options={[]} />
+        <Select name="pais" searchable creatable createLabel="Crear país" label="País" options={[]} />
         <span class="hint">«Todos los países» si sirve en cualquiera (p. ej. Efectivo).</span>
       </div>
     </form>
     <button slot="footer" type="button" class="btn btn-ghost" data-modal-close>Cancelar</button>
     <button slot="footer" type="button" class="btn btn-primary" data-save>Guardar</button>
   </Modal>
+  <CrearRapido />
 </AppLayout>
 
 <script>
@@ -59,6 +61,7 @@ import Select from "../components/ui/Select.astro";
   import { initTableFilter } from "../lib/ui/table-filter";
   import { metodosPago, metodoPago, ventas, totalMov, guardarMetodoPago, paises, paisActual } from "../lib/store";
   import { money, esc, menu, intentar, flashRow, dsSelect } from "../lib/view";
+  import { conCrearPais } from "../lib/crear-rapido";
 
   const scope = document.querySelector<HTMLElement>("[data-table]")!;
   const body = scope.querySelector<HTMLElement>("[data-body]")!;
@@ -93,7 +96,9 @@ import Select from "../components/ui/Select.astro";
   const form = modal.querySelector<HTMLFormElement>("[data-form]")!;
   const nombre = form.querySelector<HTMLInputElement>("[name=nombre]")!;
   const pais = dsSelect(form, "ds-select[name=pais]");
-  pais.setOptions([{ value: "", label: "Todos los países" }, ...paises().map((p) => ({ value: p.nombre, label: p.nombre }))]);
+  const opcionesPais = () => pais.setOptions([{ value: "", label: "Todos los países" }, ...paises().map((p) => ({ value: p.nombre, label: p.nombre }))]);
+  opcionesPais();
+  conCrearPais(pais, opcionesPais);
   let editando = 0;
   function open(id = 0) {
     editando = id;

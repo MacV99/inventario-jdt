@@ -8,6 +8,7 @@ import Select from "../components/ui/Select.astro";
 import DatePicker from "../components/ui/DatePicker.astro";
 import Modal from "../components/ui/Modal.astro";
 import FormError from "../components/ui/FormError.astro";
+import CrearRapido from "../components/app/CrearRapido.astro";
 import { TIPO_MOV } from "../lib/store";
 
 const tipos = Object.entries(TIPO_MOV).map(([value, t]) => ({ value, label: t.label, hint: `${t.desde} → ${t.hacia}` }));
@@ -69,7 +70,7 @@ const tipos = Object.entries(TIPO_MOV).map(([value, t]) => ({ value, label: t.la
       </div>
       <div class="field" data-show="compra traslado entrega devolucion entre_maletas ajuste_entrada">
         <span class="label">Entra a</span>
-        <Select name="destino" searchable placeholder="Elegir" options={[]} />
+        <Select name="destino" searchable createLabel="Crear bodega" placeholder="Elegir" options={[]} />
       </div>
       <div class="field" data-show="venta">
         <label for="mv-curso">Curso</label>
@@ -77,7 +78,7 @@ const tipos = Object.entries(TIPO_MOV).map(([value, t]) => ({ value, label: t.la
       </div>
       <div class="field" data-show="venta">
         <span class="label">¿Cómo pagó?</span>
-        <Select name="metodo" placeholder="Elegir cómo pagó" options={[]} />
+        <Select name="metodo" searchable creatable createLabel="Crear método" placeholder="Elegir cómo pagó" options={[]} />
       </div>
 
       <div class="field span-2">
@@ -100,7 +101,7 @@ const tipos = Object.entries(TIPO_MOV).map(([value, t]) => ({ value, label: t.la
     </form>
     <template data-item-tpl>
       <div class="item-row" data-item>
-        <ds-select name="producto" searchable placeholder="Elegir producto" aria-label="Producto"></ds-select>
+        <ds-select name="producto" searchable create-label="Crear producto" placeholder="Elegir producto" aria-label="Producto"></ds-select>
         <input class="input tnum" type="text" inputmode="numeric" name="cantidad" placeholder="Cantidad" aria-label="Cantidad" />
         <input class="input tnum" type="text" inputmode="decimal" name="valor" placeholder="Precio c/u" aria-label="Precio unitario" data-valor data-money />
         <span class="num tnum muted" data-subtotal>—</span>
@@ -123,6 +124,7 @@ const tipos = Object.entries(TIPO_MOV).map(([value, t]) => ({ value, label: t.la
     <button slot="footer" type="button" class="btn btn-danger" data-det-anular><i class="bi bi-x-circle" aria-hidden="true"></i>Anular</button>
     <button slot="footer" type="button" class="btn btn-ghost" data-modal-close>Cerrar</button>
   </Modal>
+  <CrearRapido />
 </AppLayout>
 
 <style>
@@ -218,8 +220,9 @@ const tipos = Object.entries(TIPO_MOV).map(([value, t]) => ({ value, label: t.la
   import "../lib/ui";
   import { initTableFilter } from "../lib/ui/table-filter";
   import {
-    movimientos, bodegas, bodega, productos, cantidadEn, registrarMovimiento, anularMovimiento, totalMov, totalLocal, unidadesMov, TIPO_MOV, REGLAS, MONEDA, type TipoMov, type Movimiento, rutaMov, metodosDe, metodoPago, esVentaOficina, monedaDe, precioEn, producto, miBodega, LADO_BODEGUERO,
+    movimientos, bodegas, bodega, productos, cantidadEn, registrarMovimiento, anularMovimiento, totalMov, totalLocal, unidadesMov, TIPO_MOV, REGLAS, MONEDA, type TipoMov, type Movimiento, rutaMov, metodosDe, metodoPago, esVentaOficina, monedaDe, precioEn, producto, miBodega, LADO_BODEGUERO, esAdmin,
   } from "../lib/store";
+  import { conCrearProducto, conCrearBodega, conCrearMetodo } from "../lib/crear-rapido";
   import { money, num, day, dayYear, esc, searchText, menu, dsSelect, intentar, parseNum, urlParam, today, flashRow, opcionesLugar, type DsSelectEl } from "../lib/view";
 
   const scope = document.querySelector<HTMLElement>("[data-table]")!;
@@ -332,6 +335,8 @@ const tipos = Object.entries(TIPO_MOV).map(([value, t]) => ({ value, label: t.la
     keep(origen, lado === "origen" ? suya : mia ? otros(r.origen) : lugares(r.origen));
     keep(destino, lado === "destino" ? suya : mia ? otros(r.destino) : lugares(r.destino));
     if (lado) (lado === "origen" ? origen : destino).value = mia;
+    // Admin: crear al vuelo una bodega de destino (cuando el destino es solo bodega) y productos que entran de afuera
+    destino.toggleAttribute("creatable", esAdmin() && r.destino?.join() === "bodega");
     // Cómo pagó: los métodos del país de donde sale la venta
     keep(metodo, metodosDe(lugarVenta()?.pais).map((m) => ({ value: String(m.id), label: m.nombre })));
     valorLabel.textContent = t() === "venta" ? (cur() === MONEDA ? "Precio unit." : `Precio (${cur()})`) : "";
@@ -341,15 +346,21 @@ const tipos = Object.entries(TIPO_MOV).map(([value, t]) => ({ value, label: t.la
     rows().forEach((row) => {
       const p = row.querySelector<DsSelectEl>("ds-select")!;
       p.setOptions(opts);
+      p.toggleAttribute("creatable", creaProducto());
     });
     recalc();
   }
+
+  /** Producto nuevo: solo el admin y solo en lo que entra de afuera (compra, ajuste de entrada). */
+  const creaProducto = () => esAdmin() && !REGLAS[t()].origen;
 
   function addItem() {
     items.append(tpl.content.cloneNode(true));
     const row = rows().at(-1)!;
     const p = row.querySelector<DsSelectEl>("ds-select")!;
     p.setOptions(productOptions());
+    p.toggleAttribute("creatable", creaProducto());
+    conCrearProducto(p, sync);
     // Venta: el precio del producto en el país de donde sale
     p.addEventListener("change", () => {
       const v = row.querySelector<HTMLInputElement>("[name=valor]")!;
@@ -377,6 +388,8 @@ const tipos = Object.entries(TIPO_MOV).map(([value, t]) => ({ value, label: t.la
   }
 
   tipo.addEventListener("change", sync);
+  conCrearBodega(destino, sync);
+  conCrearMetodo(metodo, () => lugarVenta()?.pais, sync);
   origen.addEventListener("change", sync);
   form.addEventListener("input", recalc);
   form.querySelector("[data-add-item]")!.addEventListener("click", () => {
