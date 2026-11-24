@@ -230,6 +230,33 @@ create index if not exists dinero_destino on inventario.dinero (destino_id);
 -- En qué caja entró el dinero que entregó un monitor (vacío = en ninguna, p. ej. transferencia en Colombia)
 alter table inventario.pagos add column if not exists caja_id uuid references inventario.cajas(id);
 
+-- ── Cursos (2026-11-24, pedido de RD) ────────────────────────────────
+-- El cuadro de doña Leidy, igual que su Excel: una fila por curso (de dos días) con la plata del curso.
+-- Debía entregar = base + entradas + ventas − gastos − cuenta Octavio − cuenta German − Bold (el préstamo no se resta).
+-- Falta = debía entregar − efectivo entregado (a Stiven). Se calculan en la página; aquí solo se guarda lo que ella anota.
+create table if not exists inventario.cursos (
+  id          bigint generated always as identity primary key,
+  fecha       date not null,                                   -- primer día del curso
+  ciudad      text not null check (ciudad <> ''),
+  pais        text not null references inventario.paises(nombre) on update cascade,
+  alumnos     integer not null default 0 check (alumnos >= 0),
+  base        numeric(14,2) not null default 0,
+  entradas    numeric(14,2) not null default 0,
+  ventas      numeric(14,2) not null default 0,
+  gastos      numeric(14,2) not null default 0,
+  octavio     numeric(14,2) not null default 0,                -- lo que entró a la cuenta de Don Octavio
+  german      numeric(14,2) not null default 0,                -- lo que entró a la cuenta de German
+  bold        numeric(14,2) not null default 0,
+  prestamo    numeric(14,2) not null default 0,
+  plataformas integer not null default 0 check (plataformas >= 0),
+  profesor    numeric(14,2) not null default 0,
+  entregado   numeric(14,2) not null default 0,                -- efectivo entregado a Stiven
+  nota        text,
+  creado_por  uuid not null references inventario.perfiles(id),
+  created_at  timestamptz not null default now()
+);
+create index if not exists cursos_fecha on inventario.cursos (fecha);
+
 -- Nadie entra a las tablas directo (solo las funciones de abajo)
 do $$
 declare t text;
@@ -497,6 +524,14 @@ begin
                'nota', d.nota, 'anulado', d.anulado, 'creado_por', coalesce(c.nombre, '')) order by d.id)
       from inventario.dinero d left join inventario.perfiles c on c.id = d.creado_por
       where v_admin or (v_mia is not null and v_mia in (d.origen_id, d.destino_id))), '[]'),
+    -- Cursos (cuadro de doña Leidy): solo admin
+    'cursos', case when v_admin then coalesce((
+      select jsonb_agg(jsonb_build_object('id', k.id, 'fecha', k.fecha, 'ciudad', k.ciudad, 'pais', k.pais, 'alumnos', k.alumnos,
+               'base', k.base, 'entradas', k.entradas, 'ventas', k.ventas, 'gastos', k.gastos, 'octavio', k.octavio,
+               'german', k.german, 'bold', k.bold, 'prestamo', k.prestamo, 'plataformas', k.plataformas,
+               'profesor', k.profesor, 'entregado', k.entregado, 'nota', k.nota, 'creado_por', coalesce(c.nombre, ''))
+             order by k.fecha, k.id)
+      from inventario.cursos k left join inventario.perfiles c on c.id = k.creado_por), '[]') else '[]' end,
     'stock', coalesce((
       select jsonb_agg(jsonb_build_array(s.bodega_id, s.producto_id, s.cantidad))
       from inventario.stock s where v_admin or s.bodega_id = v_maleta), '[]'),
@@ -884,6 +919,62 @@ begin
     end if;
   end if;
   update inventario.dinero set anulado = true, anulado_por = v_yo.id, anulado_en = now() where id = p_id;
+  return jsonb_build_object('datos', inventario.datos(v_yo));
+end $$;
+
+-- ── Cursos ───────────────────────────────────────────────────────────
+-- Guarda uno o varios cursos (solo admin). Con id: lo cambia; sin id: lo crea. p: {...} o [{...}, {...}]
+create or replace function public.inv_curso(p jsonb)
+returns jsonb language plpgsql security definer set search_path = '' as $$
+declare
+  v_yo  inventario.perfiles := inventario.exigir(array['superadmin','admin']);
+  v_x   jsonb;
+  v_id  bigint;
+  v_ids bigint[] := '{}';
+  n     text;
+begin
+  for v_x in select * from jsonb_array_elements(case when jsonb_typeof(p) = 'array' then p else jsonb_build_array(p) end) loop
+    if nullif(v_x->>'fecha', '') is null then raise exception 'Elige la fecha del curso.'; end if;
+    if nullif(trim(v_x->>'ciudad'), '') is null then raise exception 'Escribe la ciudad.'; end if;
+    if not exists (select 1 from inventario.paises where nombre = v_x->>'pais') then raise exception 'Elige el país.'; end if;
+    foreach n in array array['alumnos','base','entradas','ventas','gastos','octavio','german','bold','prestamo','plataformas','profesor','entregado'] loop
+      if coalesce((v_x->>n)::numeric, 0) < 0 then raise exception 'Los valores no pueden ser negativos.'; end if;
+    end loop;
+    v_id := nullif(v_x->>'id', '')::bigint;
+    if v_id is null then
+      insert into inventario.cursos (fecha, ciudad, pais, alumnos, base, entradas, ventas, gastos, octavio, german, bold, prestamo, plataformas, profesor, entregado, nota, creado_por)
+      values ((v_x->>'fecha')::date, trim(v_x->>'ciudad'), v_x->>'pais',
+              coalesce((v_x->>'alumnos')::integer, 0), coalesce((v_x->>'base')::numeric, 0), coalesce((v_x->>'entradas')::numeric, 0),
+              coalesce((v_x->>'ventas')::numeric, 0), coalesce((v_x->>'gastos')::numeric, 0), coalesce((v_x->>'octavio')::numeric, 0),
+              coalesce((v_x->>'german')::numeric, 0), coalesce((v_x->>'bold')::numeric, 0), coalesce((v_x->>'prestamo')::numeric, 0),
+              coalesce((v_x->>'plataformas')::integer, 0), coalesce((v_x->>'profesor')::numeric, 0), coalesce((v_x->>'entregado')::numeric, 0),
+              nullif(trim(v_x->>'nota'), ''), v_yo.id)
+      returning id into v_id;
+    else
+      update inventario.cursos set
+        fecha = (v_x->>'fecha')::date, ciudad = trim(v_x->>'ciudad'), pais = v_x->>'pais',
+        alumnos = coalesce((v_x->>'alumnos')::integer, 0), base = coalesce((v_x->>'base')::numeric, 0),
+        entradas = coalesce((v_x->>'entradas')::numeric, 0), ventas = coalesce((v_x->>'ventas')::numeric, 0),
+        gastos = coalesce((v_x->>'gastos')::numeric, 0), octavio = coalesce((v_x->>'octavio')::numeric, 0),
+        german = coalesce((v_x->>'german')::numeric, 0), bold = coalesce((v_x->>'bold')::numeric, 0),
+        prestamo = coalesce((v_x->>'prestamo')::numeric, 0), plataformas = coalesce((v_x->>'plataformas')::integer, 0),
+        profesor = coalesce((v_x->>'profesor')::numeric, 0), entregado = coalesce((v_x->>'entregado')::numeric, 0),
+        nota = nullif(trim(v_x->>'nota'), '')
+      where id = v_id;
+      if not found then raise exception 'Ese curso no existe.'; end if;
+    end if;
+    v_ids := v_ids || v_id;
+  end loop;
+  return jsonb_build_object('datos', inventario.datos(v_yo), 'ids', to_jsonb(v_ids));
+end $$;
+
+-- Borra un curso mal anotado (solo admin)
+create or replace function public.inv_curso_borrar(p_id bigint)
+returns jsonb language plpgsql security definer set search_path = '' as $$
+declare v_yo inventario.perfiles := inventario.exigir(array['superadmin','admin']);
+begin
+  delete from inventario.cursos where id = p_id;
+  if not found then raise exception 'Ese curso no existe.'; end if;
   return jsonb_build_object('datos', inventario.datos(v_yo));
 end $$;
 

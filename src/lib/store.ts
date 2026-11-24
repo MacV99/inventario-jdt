@@ -62,6 +62,30 @@ export interface Dinero {
   anulado: boolean;
   creado_por: string;
 }
+/** Un curso del cuadro de doña Leidy (igual que su Excel). Debía entregar y falta se calculan (ver debiaEntregar). */
+export interface Curso {
+  id: number;
+  /** Primer día (los cursos son de dos días). */
+  fecha: string;
+  ciudad: string;
+  pais: string;
+  alumnos: number;
+  base: number;
+  entradas: number;
+  ventas: number;
+  gastos: number;
+  octavio: number;
+  german: number;
+  bold: number;
+  prestamo: number;
+  plataformas: number;
+  profesor: number;
+  /** Efectivo entregado a Stiven. */
+  entregado: number;
+  nota?: string | null;
+  creado_por: string;
+}
+export type CursoIn = Omit<Curso, "id" | "creado_por"> & { id?: number };
 export interface Yo { id: string; nombre: string; usuario: string; rol: Rol; bodega_id?: string | null }
 
 interface State {
@@ -77,6 +101,7 @@ interface State {
   pagos: Pago[];
   cajas: Caja[];
   dinero: Dinero[];
+  cursos: Curso[];
   /** Solo en modo real: stock y costo promedio ya calculados por la base. */
   stock?: [string, string, number][];
   costos?: Record<string, number>;
@@ -150,7 +175,7 @@ export const LADO_BODEGUERO: Partial<Record<TipoMov, "origen" | "destino">> = {
 const KEY_DEMO = "jdt-inventario-demo";
 const KEY_CACHE = "jdt-inv-datos";
 const KEY_VER = "jdt-inv-ver-como";
-const VERSION = 8;
+const VERSION = 9;
 const hoy = () => new Date().toLocaleDateString("en-CA"); // AAAA-MM-DD en la hora local
 
 /** Prueba local sin sesión: datos de ejemplo (también en una copia armada con PUBLIC_DEMO=1). En la página publicada nunca. */
@@ -990,6 +1015,46 @@ export async function anularDinero(id: number) {
   saveDemo();
 }
 
+// ── Cursos (cuadro de doña Leidy) ────────────────────────────────────
+/** Cursos del país elegido, del más nuevo al más viejo. */
+export const cursos = () => (load().cursos ?? []).filter((c) => !paisActual() || c.pais === paisActual()).sort((a, b) => b.fecha.localeCompare(a.fecha) || b.id - a.id);
+export const curso = (id: number) => (load().cursos ?? []).find((c) => c.id === id);
+/** Lo que debía entregar en efectivo: base + entradas + ventas − gastos − cuentas (Octavio, German) − Bold. El préstamo no se resta (así lo saca ella). */
+export const debiaEntregar = (c: Pick<Curso, "base" | "entradas" | "ventas" | "gastos" | "octavio" | "german" | "bold">) =>
+  c.base + c.entradas + c.ventas - c.gastos - c.octavio - c.german - c.bold;
+/** Lo que falta por entregar (negativo = entregó de más). */
+export const faltaCurso = (c: Curso | CursoIn) => debiaEntregar(c) - c.entregado;
+
+const CAMPOS_CURSO = ["alumnos", "base", "entradas", "ventas", "gastos", "octavio", "german", "bold", "prestamo", "plataformas", "profesor", "entregado"] as const;
+
+/** Guarda un curso (con id: lo cambia). Devuelve su id. */
+export async function guardarCurso(x: CursoIn): Promise<number> {
+  if (!x.fecha) throw new Error("Elige la fecha del curso.");
+  if (!x.ciudad.trim()) throw new Error("Escribe la ciudad.");
+  if (!pais(x.pais)) throw new Error("Elige el país.");
+  if (CAMPOS_CURSO.some((k) => !(Number(x[k]) >= 0))) throw new Error("Los valores no pueden ser negativos.");
+  if (!DEMO) return Number((await llamar("inv_curso", { p: x })).ids![0]);
+  const s = load();
+  s.cursos ??= [];
+  const datos = { ...x, ciudad: x.ciudad.trim(), nota: x.nota?.trim() || null };
+  const viejo = x.id ? s.cursos.find((c) => c.id === x.id) : undefined;
+  if (x.id && !viejo) throw new Error("Ese curso no existe.");
+  if (viejo) Object.assign(viejo, datos);
+  else s.cursos.push({ ...datos, id: Math.max(0, ...s.cursos.map((c) => c.id)) + 1, creado_por: s.yo.nombre });
+  saveDemo();
+  return viejo?.id ?? s.cursos.at(-1)!.id;
+}
+
+/** Borra un curso mal anotado. */
+export async function borrarCurso(id: number) {
+  if (!DEMO) return void (await llamar("inv_curso_borrar", { p_id: id }));
+  const s = load();
+  const i = (s.cursos ?? []).findIndex((c) => c.id === id);
+  if (i < 0) throw new Error("Ese curso no existe.");
+  s.cursos.splice(i, 1);
+  saveDemo();
+}
+
 /** Texto para comparar sin mayúsculas ni tildes ("Bogotá" = "bogota"). */
 export const llave = (s: string) => s.normalize("NFD").replace(/[̀-ͯ]/g, "").trim().toLowerCase();
 
@@ -1078,6 +1143,7 @@ function seed(): State {
       { id: "k1", bodega_id: null, nombre: "Cuenta Don Octavio", pais: "República Dominicana", activa: true },
     ],
     dinero: [],
+    cursos: [],
   };
   // Nombre y país de las cajas de bodega: los de su bodega
   s.cajas.forEach((c) => {
@@ -1089,6 +1155,12 @@ function seed(): State {
   din({ tipo: "entrada", fecha: "2026-11-18", destino_id: "k-b7", valor_destino: 200, moneda_destino: "USD", nota: "Lo que había en caja" });
   din({ tipo: "gasto", fecha: "2026-11-20", origen_id: "k-b7", valor_origen: 3500, moneda_origen: "DOP", nota: "Transporte mercancía" });
   din({ tipo: "cambio", fecha: "2026-11-21", origen_id: "k-b7", valor_origen: 60000, moneda_origen: "DOP", destino_id: "k1", valor_destino: 1000, moneda_destino: "USD", nota: "Casa de cambio" });
+  // Cursos de ejemplo (cuadro de doña Leidy)
+  const cur = (c: Omit<Curso, "id" | "pais" | "creado_por" | "prestamo" | "german" | "profesor" | "nota"> & Partial<Curso>) =>
+    s.cursos.push({ id: s.cursos.length + 1, pais: "República Dominicana", creado_por: "Leidy", prestamo: 0, german: 0, profesor: 0, nota: null, ...c });
+  cur({ fecha: "2026-10-30", ciudad: "Santo Domingo", alumnos: 40, base: 5000, entradas: 60000, ventas: 88000, gastos: 32000, octavio: 21000, bold: 0, plataformas: 14, entregado: 100000 });
+  cur({ fecha: "2026-11-06", ciudad: "Higuey", alumnos: 28, base: 5000, entradas: 42000, ventas: 51500, gastos: 24300, octavio: 15000, bold: 2500, plataformas: 9, entregado: 55200, nota: "Faltó un recibo de gasolina" });
+  cur({ fecha: "2026-11-13", ciudad: "Bonao", alumnos: 35, base: 10000, entradas: 52500, ventas: 70100, gastos: 28000, octavio: 18400, german: 3000, bold: 0, plataformas: 12, entregado: 83200 });
   const it = (producto_id: string, cantidad: number, valor_unitario = 0) => ({ producto_id, cantidad, valor_unitario });
   const reg = (m: NuevoMovimiento & { por?: string }) => {
     s.yo.nombre = m.por ?? "German";

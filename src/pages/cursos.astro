@@ -1,0 +1,359 @@
+---
+// Cursos (2026-11-24, pedido de RD): el cuadro de doña Leidy pasado tal cual, una fila por curso.
+// Ella anota lo mismo que en su Excel; «Debía entregar», «Falta» y los totales salen solos.
+// Debía entregar = base + entradas + ventas − gastos − cuenta Octavio − cuenta German − Bold (el préstamo no se resta).
+import AppLayout from "../layouts/AppLayout.astro";
+import PageHeader from "../components/ui/PageHeader.astro";
+import Modal from "../components/ui/Modal.astro";
+import Select from "../components/ui/Select.astro";
+import DatePicker from "../components/ui/DatePicker.astro";
+import FormError from "../components/ui/FormError.astro";
+import StatCard from "../components/ui/StatCard.astro";
+
+// Casillas de plata, en el orden del Excel
+const PLATA = [
+  { name: "base", label: "Base" },
+  { name: "entradas", label: "Entradas" },
+  { name: "ventas", label: "Ventas" },
+  { name: "gastos", label: "Gastos" },
+  { name: "octavio", label: "Cuenta Octavio" },
+  { name: "german", label: "Cuenta German" },
+  { name: "bold", label: "Bold" },
+  { name: "prestamo", label: "Préstamo" },
+];
+---
+
+<AppLayout title="Cursos">
+  <PageHeader title="Cursos" subtitle=" ">
+    <button slot="actions" type="button" class="btn btn-primary" data-new><i class="bi bi-plus-lg" aria-hidden="true"></i>Nuevo curso</button>
+  </PageHeader>
+
+  <section class="card kpis">
+    <StatCard label="Cursos" value="—" dataKey="cursos" />
+    <StatCard label="Alumnos" value="—" dataKey="alumnos" />
+    <StatCard label="Debía entregar" value="—" dataKey="debia" hint="Base + entradas + ventas − gastos − cuentas − Bold" />
+    <StatCard label="Falta por entregar" value="—" dataKey="falta" hint="Lo que debía entregar menos lo que entregó" />
+  </section>
+
+  <section class="card card-list" data-table>
+    <div class="toolbar">
+      <label class="input-icon grow">
+        <i class="bi bi-search" aria-hidden="true"></i>
+        <input class="input" type="search" placeholder="Buscar ciudad o nota…" aria-label="Buscar" data-filter-q />
+      </label>
+      <Select value="" filter="mes" label="Mes" options={[{ value: "", label: "Todos los meses" }]} id="f-mes" />
+      <Select value="" filter="falta" label="Cuadre" options={[{ value: "", label: "Todos" }, { value: "falta", label: "Le falta" }, { value: "sobra", label: "Entregó de más" }, { value: "cuadra", label: "Cuadra" }]} />
+    </div>
+    <div class="table-wrap">
+      <table class="table table-cards tabla-cursos">
+        <thead>
+          <tr>
+            <th data-card-title>Curso</th>
+            <th class="num">Alumnos</th>
+            <th class="num">Base</th>
+            <th class="num">Entradas</th>
+            <th class="num">Ventas</th>
+            <th class="num">Gastos</th>
+            <th class="num">Cta. Octavio</th>
+            <th class="num">Cta. German</th>
+            <th class="num">Bold</th>
+            <th class="num">Préstamo</th>
+            <th class="num">Plataformas</th>
+            <th class="num">Profesor</th>
+            <th class="num">Debía entregar</th>
+            <th class="num">Entregó a Stiven</th>
+            <th class="num">Falta</th>
+            <th>Nota</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody data-body></tbody>
+        <tfoot data-totales></tfoot>
+      </table>
+    </div>
+    <div class="empty" data-empty hidden>
+      <i class="bi bi-easel" aria-hidden="true"></i>
+      <p class="muted">Todavía no hay cursos anotados.</p>
+    </div>
+  </section>
+
+  <Modal id="curso-modal" title="Nuevo curso" size="lg">
+    <form class="form-grid" data-form novalidate>
+      <div class="span-2"><FormError /></div>
+      <div class="field">
+        <span class="label">Fecha (primer día)</span>
+        <DatePicker name="fecha" label="Fecha" span={2} />
+      </div>
+      <div class="field">
+        <span class="label">Ciudad</span>
+        <Select name="ciudad" searchable creatable createLabel="Usar esta ciudad" placeholder="Escribir ciudad" options={[]} />
+      </div>
+      <div class="field" data-campo-pais>
+        <span class="label">País</span>
+        <Select name="pais" searchable placeholder="Elegir país" options={[]} />
+      </div>
+      <div class="field">
+        <label for="cu-alumnos">Alumnos</label>
+        <input id="cu-alumnos" name="alumnos" class="input tnum" type="text" inputmode="numeric" placeholder="0" />
+      </div>
+      {
+        PLATA.map((c) => (
+          <div class="field">
+            <label for={`cu-${c.name}`}>{c.label}</label>
+            <input id={`cu-${c.name}`} name={c.name} class="input tnum" type="text" inputmode="decimal" data-money placeholder="0" />
+          </div>
+        ))
+      }
+      <div class="field">
+        <label for="cu-plataformas">Plataformas</label>
+        <input id="cu-plataformas" name="plataformas" class="input tnum" type="text" inputmode="numeric" placeholder="0" />
+      </div>
+      <div class="field">
+        <label for="cu-profesor">Profesor</label>
+        <input id="cu-profesor" name="profesor" class="input tnum" type="text" inputmode="decimal" data-money placeholder="0" />
+      </div>
+      <div class="field span-2">
+        <label for="cu-entregado">Total efectivo entregado a Stiven</label>
+        <input id="cu-entregado" name="entregado" class="input tnum" type="text" inputmode="decimal" data-money placeholder="0" />
+      </div>
+      <div class="span-2 cuadre" data-cuadre></div>
+      <div class="field span-2">
+        <label for="cu-nota">Nota</label>
+        <input id="cu-nota" name="nota" class="input" placeholder="Ej. Revisar transferencias" />
+      </div>
+    </form>
+    <button slot="footer" type="button" class="btn btn-ghost" data-modal-close>Cancelar</button>
+    <button slot="footer" type="button" class="btn btn-primary" data-save>Guardar</button>
+  </Modal>
+</AppLayout>
+
+<style>
+  .tabla-cursos :global(td.num),
+  .tabla-cursos th.num {
+    white-space: nowrap;
+  }
+
+  .tabla-cursos :global(td:first-child) {
+    min-width: 150px;
+  }
+
+  .tabla-cursos :global(td.nota) {
+    min-width: 220px;
+  }
+
+  .tabla-cursos :global(.falta),
+  .cuadre :global(.falta) {
+    color: var(--clr-danger);
+  }
+
+  .tabla-cursos :global(.sobra),
+  .cuadre :global(.sobra) {
+    color: var(--clr-success);
+  }
+
+  @media (max-width: 599.98px) {
+    .tabla-cursos :global(td:first-child),
+    .tabla-cursos :global(td.nota) {
+      min-width: 0;
+    }
+  }
+
+  .tabla-cursos tfoot :global(td) {
+    padding: var(--cell-py) var(--cell-px);
+    border-top: 1px solid var(--clr-border);
+    font-weight: 700;
+    white-space: nowrap;
+  }
+
+  .cuadre {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-2) var(--space-5);
+    padding: var(--space-3) var(--space-4);
+    border-radius: var(--radius-md);
+    background-color: var(--clr-surface-hover);
+  }
+
+  .cuadre :global(strong) {
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* En el celular cada curso es una tarjeta; los totales ya están arriba */
+  @media (max-width: 599.98px) {
+    .tabla-cursos tfoot {
+      display: none;
+    }
+  }
+</style>
+
+<script>
+  import "../lib/ui";
+  import { initTableFilter } from "../lib/ui/table-filter";
+  import { cursos, curso, guardarCurso, borrarCurso, debiaEntregar, faltaCurso, paises, pais, paisActual, porMoneda, type Curso, type CursoIn } from "../lib/store";
+  import { money, montos, num, esc, searchText, menu, intentar, dsSelect, parseNum, flashRow, monthLabel, uniqueOptions, sinNuevo } from "../lib/view";
+
+  const scope = document.querySelector<HTMLElement>("[data-table]")!;
+  const body = scope.querySelector<HTMLElement>("[data-body]")!;
+  const pie = scope.querySelector<HTMLElement>("[data-totales]")!;
+  const fMes = dsSelect(scope, "#f-mes");
+  const table = initTableFilter(scope, (st) => totales(st.visible.map((r) => Number(r.dataset.id))));
+
+  const monedaDe = (c: { pais: string }) => pais(c.pais)?.moneda ?? "DOP";
+  const plata = (c: Curso, n: number) => (n ? money(n, monedaDe(c)) : '<span class="muted">—</span>');
+  const cifra = (n: number) => (n ? num(n) : '<span class="muted">—</span>');
+  const PAIS_RD = "República Dominicana";
+
+  /** "15–16 feb" (curso de dos días). */
+  function dias(iso: string) {
+    const d = new Date(`${iso}T12:00:00Z`);
+    const d2 = new Date(d.getTime() + 864e5);
+    const mes = (x: Date) => x.toLocaleDateString("es-CO", { month: "short", timeZone: "UTC" }).replace(".", "");
+    const anio = d.getUTCFullYear() === new Date().getFullYear() ? "" : ` ${d.getUTCFullYear()}`;
+    return d.getUTCMonth() === d2.getUTCMonth() ? `${d.getUTCDate()}–${d2.getUTCDate()} ${mes(d)}${anio}` : `${d.getUTCDate()} ${mes(d)} – ${d2.getUTCDate()} ${mes(d2)}${anio}`;
+  }
+
+  /** Falta (rojo), sobra (verde) o cuadra. */
+  function faltaHtml(c: Curso | CursoIn, mon: string) {
+    const f = faltaCurso(c);
+    if (Math.abs(f) < 0.005) return '<span class="muted">Cuadra</span>';
+    return f > 0 ? `<span class="falta strong">${money(f, mon)}</span>` : `<span class="sobra">Sobra ${money(-f, mon)}</span>`;
+  }
+
+  function render() {
+    const cs = cursos();
+    body.innerHTML = cs
+      .map((c) => {
+        const f = faltaCurso(c);
+        const estado = Math.abs(f) < 0.005 ? "cuadra" : f > 0 ? "falta" : "sobra";
+        return `<tr data-row data-id="${c.id}" data-mes="${c.fecha.slice(0, 7)}" data-falta="${estado}" data-text="${esc(searchText(c.ciudad, c.nota, c.pais))}">
+          <td><span class="strong">${esc(c.ciudad)}</span><p class="sub">${dias(c.fecha)}${paisActual() ? "" : ` · ${esc(c.pais)}`}</p></td>
+          <td class="num tnum">${cifra(c.alumnos)}</td>
+          <td class="num tnum">${plata(c, c.base)}</td>
+          <td class="num tnum">${plata(c, c.entradas)}</td>
+          <td class="num tnum">${plata(c, c.ventas)}</td>
+          <td class="num tnum">${plata(c, c.gastos)}</td>
+          <td class="num tnum">${plata(c, c.octavio)}</td>
+          <td class="num tnum">${plata(c, c.german)}</td>
+          <td class="num tnum">${plata(c, c.bold)}</td>
+          <td class="num tnum">${plata(c, c.prestamo)}</td>
+          <td class="num tnum">${cifra(c.plataformas)}</td>
+          <td class="num tnum">${cifra(c.profesor)}</td>
+          <td class="num tnum">${money(debiaEntregar(c), monedaDe(c))}</td>
+          <td class="num tnum">${plata(c, c.entregado)}</td>
+          <td class="num tnum">${faltaHtml(c, monedaDe(c))}</td>
+          <td class="nota">${c.nota ? esc(c.nota) : '<span class="muted">—</span>'}</td>
+          <td class="cell-actions">${menu([
+            { value: "editar", label: "Editar", icon: "bi-pencil" },
+            { separator: true },
+            { value: "borrar", label: "Borrar", icon: "bi-trash", danger: true },
+          ])}</td>
+        </tr>`;
+      })
+      .join("");
+    const meses = [...new Set(cs.map((c) => c.fecha.slice(0, 7)))];
+    const antes = fMes.value;
+    fMes.setOptions([{ value: "", label: "Todos los meses" }, ...meses.map((m) => ({ value: m, label: monthLabel(m) }))]);
+    if (meses.includes(antes)) fMes.value = antes;
+    document.querySelector("[data-page-subtitle]")!.textContent = `${paisActual() || "Todos los países"} · el cuadro de los cursos, como en el Excel`;
+    table.rescan();
+  }
+
+  /** Totales de los cursos que se ven (cada moneda aparte). */
+  function totales(ids: number[]) {
+    const cs = ids.map((id) => curso(id)!).filter(Boolean);
+    const suma = (f: (c: Curso) => number) => porMoneda(cs.map((c) => [monedaDe(c), f(c)] as const));
+    const vacia = monedaDe({ pais: paisActual() || PAIS_RD });
+    const m = (f: (c: Curso) => number) => montos(suma(f), vacia, "<br>");
+    const n = (f: (c: Curso) => number) => num(cs.reduce((a, c) => a + f(c), 0));
+    const kpi = (k: string, v: string) => (document.querySelector(`[data-kpi="${k}"]`)!.textContent = v);
+    kpi("cursos", num(cs.length));
+    kpi("alumnos", n((c) => c.alumnos));
+    kpi("debia", montos(suma(debiaEntregar), vacia, "\n"));
+    kpi("falta", montos(suma((c) => Math.max(0, faltaCurso(c))), vacia, "\n"));
+    pie.innerHTML = cs.length
+      ? `<tr>
+          <td>Total · ${num(cs.length)} cursos</td>
+          <td class="num tnum">${n((c) => c.alumnos)}</td>
+          ${(["base", "entradas", "ventas", "gastos", "octavio", "german", "bold", "prestamo"] as const).map((k) => `<td class="num tnum">${m((c) => c[k])}</td>`).join("")}
+          <td class="num tnum">${n((c) => c.plataformas)}</td>
+          <td class="num tnum">${n((c) => c.profesor)}</td>
+          <td class="num tnum">${m(debiaEntregar)}</td>
+          <td class="num tnum">${m((c) => c.entregado)}</td>
+          <td class="num tnum falta">${m((c) => Math.max(0, faltaCurso(c)))}</td>
+          <td colspan="2"></td>
+        </tr>`
+      : "";
+  }
+
+  render();
+
+  // ── Anotar / editar ──
+  const modal = document.getElementById("curso-modal")!;
+  const form = modal.querySelector<HTMLFormElement>("[data-form]")!;
+  const fecha = form.querySelector<HTMLElement & { value: string }>("ds-date[name=fecha]")!;
+  const ciudad = dsSelect(form, "ds-select[name=ciudad]");
+  const paisSel = dsSelect(form, "ds-select[name=pais]");
+  const inp = (n: string) => form.querySelector<HTMLInputElement>(`[name=${n}]`)!;
+  const NUMEROS = ["alumnos", "base", "entradas", "ventas", "gastos", "octavio", "german", "bold", "prestamo", "plataformas", "profesor", "entregado"] as const;
+  const fmt = new Intl.NumberFormat("es-CO", { maximumFractionDigits: 2 });
+  let editando = 0;
+
+  function leer(): CursoIn {
+    const x = Object.fromEntries(NUMEROS.map((k) => [k, parseNum(inp(k).value) || 0])) as Record<(typeof NUMEROS)[number], number>;
+    return { id: editando || undefined, fecha: fecha.value, ciudad: sinNuevo(ciudad.value), pais: paisSel.value, nota: inp("nota").value, ...x };
+  }
+
+  /** Lo que debía entregar y lo que falta, mientras escribe. */
+  function syncCuadre() {
+    const x = leer();
+    const mon = monedaDe({ pais: x.pais || PAIS_RD });
+    form.querySelector<HTMLElement>("[data-cuadre]")!.innerHTML = `<span>Debía entregar <strong>${money(debiaEntregar(x), mon)}</strong></span><span>Falta ${faltaHtml(x, mon).replace("Cuadra", "nada, cuadra")}</span>`;
+  }
+  form.addEventListener("input", syncCuadre);
+  form.addEventListener("focusout", syncCuadre);
+  paisSel.addEventListener("change", () => (opcionesCiudad(), syncCuadre()));
+
+  function opcionesCiudad() {
+    ciudad.setOptions(uniqueOptions(cursos().filter((c) => !paisSel.value || c.pais === paisSel.value).map((c) => c.ciudad)));
+  }
+
+  function abrir(id = 0) {
+    editando = id;
+    const c = id ? curso(id) : undefined;
+    intentar(form, () => {});
+    form.reset();
+    modal.querySelector("[data-modal-title]")!.textContent = c ? `Editar ${c.ciudad} · ${dias(c.fecha)}` : "Nuevo curso";
+    paisSel.setOptions(paises().map((p) => ({ value: p.nombre, label: p.nombre, hint: p.moneda })));
+    paisSel.value = c?.pais ?? (paisActual() || (paises().some((p) => p.nombre === PAIS_RD) ? PAIS_RD : paises()[0]?.nombre ?? ""));
+    // Con un país elegido arriba, no hace falta preguntarlo
+    form.querySelector<HTMLElement>("[data-campo-pais]")!.hidden = !!paisActual() && !c;
+    opcionesCiudad();
+    ciudad.value = c?.ciudad ?? "";
+    fecha.value = c?.fecha ?? "";
+    for (const k of NUMEROS) inp(k).value = c && c[k] ? fmt.format(c[k]) : "";
+    inp("nota").value = c?.nota ?? "";
+    syncCuadre();
+    window.ui.openModal("curso-modal");
+  }
+  document.querySelector("[data-new]")!.addEventListener("click", () => abrir());
+
+  modal.querySelector("[data-save]")!.addEventListener("click", async () => {
+    let id = 0;
+    const ok = await intentar(form, async () => (id = await guardarCurso(leer())), editando ? "Curso actualizado" : "Curso guardado");
+    if (!ok) return;
+    window.ui.closeModal("curso-modal");
+    render();
+    flashRow(body.querySelector(`tr[data-id="${id}"]`));
+  });
+
+  body.addEventListener("menu-select", async (e) => {
+    const id = Number((e.target as HTMLElement).closest<HTMLElement>("tr[data-id]")!.dataset.id);
+    const { value } = (e as CustomEvent<{ value: string }>).detail;
+    if (value === "editar") abrir(id);
+    if (value === "borrar") {
+      const c = curso(id)!;
+      const ok = await window.ui.confirm({ tone: "danger", title: `¿Borrar el curso de ${c.ciudad} (${dias(c.fecha)})?`, message: "Se borra del cuadro. No se puede deshacer.", confirmText: "Borrar" });
+      if (ok && (await intentar(null, () => borrarCurso(id), "Curso borrado"))) render();
+    }
+  });
+</script>

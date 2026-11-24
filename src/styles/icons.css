@@ -55,6 +55,7 @@
 .bi-dash-circle::before { content: "\f2e6"; }
 .bi-dash-lg::before { content: "\f63b"; }
 .bi-display::before { content: "\f302"; }
+.bi-easel::before { content: "\f310"; }
 .bi-exclamation-octagon::before { content: "\f337"; }
 .bi-exclamation-triangle::before { content: "\f33b"; }
 .bi-eye::before { content: "\f341"; }
@@ -83,6 +84,7 @@
 .bi-tags::before { content: "\f5b2"; }
 .bi-three-dots::before { content: "\f5d4"; }
 .bi-three-dots-vertical::before { content: "\f5d3"; }
+.bi-trash::before { content: "\f5de"; }
 .bi-x::before { content: "\f62a"; }
 .bi-x-circle::before { content: "\f623"; }
 .bi-x-lg::before { content: "\f659"; }
