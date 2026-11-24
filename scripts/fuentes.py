@@ -9,6 +9,7 @@ Correr de nuevo al usar un ícono nuevo:  npm run fuentes
 Necesita: pip install fonttools brotli  ·  npm i (bootstrap-icons y @fontsource-variable/montserrat)
 """
 
+import hashlib
 import json
 import sys
 import re
@@ -60,6 +61,9 @@ peso_bi = recortar(NM / "bootstrap-icons/font/fonts/bootstrap-icons.woff2", OUT 
 letras = list(range(0x20, 0x7F)) + list(range(0xA0, 0x100)) + [0x2013, 0x2014, 0x2018, 0x2019, 0x201C, 0x201D, 0x2022, 0x2026, 0x2212, 0x20AC]
 peso_m = recortar(NM / "@fontsource-variable/montserrat/files/montserrat-latin-wght-normal.woff2", OUT / "montserrat.woff2", letras, (400, 800))
 
+# Versión en la dirección: el navegador guarda las fuentes un año; si cambian, baja las nuevas
+ver = lambda f: hashlib.md5((OUT / f).read_bytes()).hexdigest()[:8]
+
 css = [
     "/* Generado por scripts/fuentes.py (npm run fuentes). No editar a mano. */",
     "",
@@ -68,13 +72,13 @@ css = [
     "  font-style: normal;",
     "  font-weight: 400 800;",
     "  font-display: swap;",
-    '  src: url("/fonts/montserrat.woff2") format("woff2");',
+    f'  src: url("/fonts/montserrat.woff2?v={ver("montserrat.woff2")}") format("woff2");',
     "}",
     "",
     "@font-face {",
     '  font-family: "bootstrap-icons";',
     "  font-display: block;",
-    '  src: url("/fonts/bi.woff2") format("woff2");',
+    f'  src: url("/fonts/bi.woff2?v={ver("bi.woff2")}") format("woff2");',
     "}",
     "",
     ".bi::before,",
@@ -97,3 +101,10 @@ css += [f'.{n}::before {{ content: "\\{mapa[n[3:]]:x}"; }}' for n in iconos]
 (SRC / "styles" / "icons.css").write_text("\n".join(css) + "\n", encoding="utf-8")
 
 print(f"{len(iconos)} íconos → bi.woff2 {peso_bi / 1024:.1f} KB · montserrat.woff2 {peso_m / 1024:.1f} KB")
+
+# Las mismas direcciones (con versión) en la precarga de BaseHead
+head = SRC / "components" / "app" / "BaseHead.astro"
+texto = head.read_text(encoding="utf-8")
+for f in ("montserrat.woff2", "bi.woff2"):
+    texto = re.sub(rf'href="/fonts/{re.escape(f)}(\?v=[0-9a-f]+)?"', f'href="/fonts/{f}?v={ver(f)}"', texto)
+head.write_text(texto, encoding="utf-8")
