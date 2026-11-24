@@ -999,6 +999,20 @@ input[type="number"]::-webkit-inner-spin-button {
   overflow: auto;
 }
 
+/* data-drag (lib/ui/drag-scroll.ts): se arrastra con el mouse y el recuadro llega solo al borde de abajo de la pantalla */
+.table-wrap[data-drag] {
+  cursor: grab;
+}
+
+.table-wrap[data-drag][data-head="self"] {
+  max-height: max(20rem, calc(100dvh - var(--wrap-top, var(--page-top)) - var(--page-bottom)));
+}
+
+.table-wrap[data-drag].is-dragging {
+  cursor: grabbing;
+  user-select: none;
+}
+
 .modal {
   --table-head-top: 0px;
   --table-head-bg: var(--modal-bg);

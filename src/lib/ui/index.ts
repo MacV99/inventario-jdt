@@ -12,6 +12,7 @@ import { initTooltips } from "./tooltip";
 import { initTableSort } from "./table-sort";
 import { initTableCards } from "./table-cards";
 import { initTableHeads } from "./table-head";
+import { initDragScroll } from "./drag-scroll";
 import { initNumericInputs } from "./numeric";
 import { busy, loading, progress, quietFetch, initProgress } from "./busy";
 
@@ -24,6 +25,7 @@ initTooltips();
 initTableSort();
 initTableCards();
 initTableHeads();
+initDragScroll();
 initProgress();
 initTabs();
 initNumericInputs();
