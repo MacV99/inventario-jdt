@@ -86,6 +86,10 @@ import FormError from "../components/ui/FormError.astro";
         <Select name="metodo" searchable creatable createLabel="Crear método" placeholder="Elegir (opcional)" options={[]} />
       </div>
       <div class="field span-2">
+        <span class="label">¿En qué caja entró?</span>
+        <Select name="caja" label="Caja" options={[]} />
+      </div>
+      <div class="field span-2">
         <label for="dn-nota">Nota</label>
         <input id="dn-nota" name="nota" class="input" placeholder="Ej. Transferencia Bancolombia" />
       </div>
@@ -99,7 +103,7 @@ import FormError from "../components/ui/FormError.astro";
   import "../lib/ui";
   import { initTableFilter } from "../lib/ui/table-filter";
   import { setKpi } from "../lib/ui/kpi";
-  import { cuadre, stockFilas, bodega, producto, ventas, pagos, totalLocal, registrarPago, anularPago, metodosDe, monedaDe, precioEn } from "../lib/store";
+  import { cuadre, stockFilas, bodega, producto, ventas, pagos, totalLocal, registrarPago, anularPago, metodosDe, monedaDe, precioEn, todasCajas } from "../lib/store";
   import { money, num, day, esc, searchText, menu, avatar, intentar, parseNum, flashRow, dsSelect } from "../lib/view";
   import { conCrearMetodo } from "../lib/crear-rapido";
 
@@ -200,12 +204,21 @@ import FormError from "../components/ui/FormError.astro";
   const metodo = dsSelect(form, "ds-select[name=metodo]");
   const opcionesMetodo = () => metodo.setOptions(metodosDe(bodega(actual)?.pais).map((m) => ({ value: String(m.id), label: m.nombre })));
   conCrearMetodo(metodo, () => bodega(actual)?.pais, opcionesMetodo);
+  // Caja donde entró la plata (las del país del monitor); «En ninguna» si no pasa por una caja
+  const cajaSel = dsSelect(form, "ds-select[name=caja]");
   let actual = "";
   function abrirDinero(id: string) {
     actual = id;
     form.reset();
     opcionesMetodo();
     metodo.value = "";
+    cajaSel.setOptions([
+      { value: "", label: "En ninguna" },
+      ...todasCajas()
+        .filter((c) => c.pais === bodega(id)?.pais)
+        .map((c) => ({ value: c.id, label: c.nombre, hint: c.bodega_id ? "Caja de la bodega" : "Cuenta" })),
+    ]);
+    cajaSel.value = "";
     intentar(form, () => {});
     const c = cuadre().find((x) => x.bodega.id === id)!;
     dinero.querySelector("[data-modal-title]")!.textContent = `Dinero recibido de ${nombre(id)}`;
@@ -216,7 +229,7 @@ import FormError from "../components/ui/FormError.astro";
   dinero.querySelector("[data-save]")!.addEventListener("click", async () => {
     const valor = parseNum(form.querySelector<HTMLInputElement>("[name=valor]")!.value);
     const nota = form.querySelector<HTMLInputElement>("[name=nota]")!.value;
-    if (!(await intentar(form, () => registrarPago(actual, valor, nota, metodo.value ? Number(metodo.value) : undefined), `Recibido ${money(valor, monedaDe(bodega(actual)).moneda)} de ${nombre(actual)}`))) return;
+    if (!(await intentar(form, () => registrarPago(actual, valor, nota, metodo.value ? Number(metodo.value) : undefined, cajaSel.value), `Recibido ${money(valor, monedaDe(bodega(actual)).moneda)} de ${nombre(actual)}`))) return;
     window.ui.closeModal("dinero-modal");
     render();
     flashRow(body.querySelector(`tr[data-id="${actual}"]`));

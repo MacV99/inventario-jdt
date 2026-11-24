@@ -185,6 +185,51 @@ alter table inventario.pagos
   add column if not exists anulado_por uuid references inventario.perfiles(id),
   add column if not exists anulado_en  timestamptz;
 
+-- ── Caja (2026-11-23, pedido de RD) ──────────────────────────────────
+-- Dónde está la plata: la caja de cada bodega y cuentas sueltas (p. ej. la cuenta de Don Octavio que les presta).
+-- Cada caja lleva lo que hay de CADA moneda por separado (en RD manejan pesos dominicanos y dólares).
+create table if not exists inventario.cajas (
+  id         uuid primary key default gen_random_uuid(),
+  bodega_id  uuid unique references inventario.bodegas(id),   -- caja de esa bodega (nombre y país: los de la bodega)
+  nombre     text not null default '',                         -- solo cuentas sueltas
+  pais       text references inventario.paises(nombre) on update cascade,
+  activa     boolean not null default true,
+  created_at timestamptz not null default now(),
+  check (bodega_id is not null or (nombre <> '' and pais is not null))
+);
+-- Cada bodega tiene su caja (también las que ya existían)
+insert into inventario.cajas (bodega_id) select id from inventario.bodegas where tipo = 'bodega' on conflict do nothing;
+
+-- Plata que entra, sale o se pasa. El dinero que entregan los monitores va en «pagos» (con la caja donde entró).
+--   entrada: llega a una caja · gasto: sale de una caja · cambio: sale de una caja en una moneda y llega a otra
+--   en la misma u otra moneda (efectivo que se lleva a la casa de cambio y llega a la cuenta de Don Octavio).
+create table if not exists inventario.dinero (
+  id             bigint generated always as identity primary key,
+  tipo           text not null check (tipo in ('entrada','gasto','cambio')),
+  fecha          date not null default current_date,
+  origen_id      uuid references inventario.cajas(id),
+  valor_origen   numeric(14,2) check (valor_origen > 0),
+  moneda_origen  text check (moneda_origen ~ '^[A-Z]{3}$'),
+  destino_id     uuid references inventario.cajas(id),
+  valor_destino  numeric(14,2) check (valor_destino > 0),
+  moneda_destino text check (moneda_destino ~ '^[A-Z]{3}$'),
+  nota           text,
+  anulado        boolean not null default false,
+  anulado_por    uuid references inventario.perfiles(id),
+  anulado_en     timestamptz,
+  creado_por     uuid not null references inventario.perfiles(id),
+  created_at     timestamptz not null default now(),
+  check ((origen_id is null) = (valor_origen is null) and (origen_id is null) = (moneda_origen is null)),
+  check ((destino_id is null) = (valor_destino is null) and (destino_id is null) = (moneda_destino is null)),
+  check (case tipo when 'entrada' then origen_id is null and destino_id is not null
+                   when 'gasto'   then origen_id is not null and destino_id is null
+                   else origen_id is not null and destino_id is not null end)
+);
+create index if not exists dinero_origen  on inventario.dinero (origen_id);
+create index if not exists dinero_destino on inventario.dinero (destino_id);
+-- En qué caja entró el dinero que entregó un monitor (vacío = en ninguna, p. ej. transferencia en Colombia)
+alter table inventario.pagos add column if not exists caja_id uuid references inventario.cajas(id);
+
 -- Nadie entra a las tablas directo (solo las funciones de abajo)
 do $$
 declare t text;
@@ -390,6 +435,8 @@ declare
   v_admin  boolean := v_yo.rol in ('superadmin','admin');
   -- «Lo mío»: la maleta del monitor o la bodega del bodeguero
   v_maleta uuid := case when v_yo.rol = 'bodeguero' then v_yo.bodega_id else (select id from inventario.bodegas where monitor_id = v_yo.id) end;
+  -- La caja de su bodega (bodeguero): ve solo la plata de esa caja
+  v_mia    uuid := inventario.mi_caja(v_yo);
 begin
   return jsonb_build_object(
     'yo', jsonb_build_object('id', v_yo.id, 'nombre', v_yo.nombre, 'usuario', v_yo.usuario, 'rol', v_yo.rol, 'bodega_id', v_yo.bodega_id),
@@ -433,9 +480,23 @@ begin
       where v_admin or m.origen_id = v_maleta or m.destino_id = v_maleta), '[]'),
     'pagos', coalesce((
       select jsonb_agg(jsonb_build_object('id', g.id, 'bodega_id', g.bodega_id, 'fecha', g.fecha, 'valor', g.valor, 'moneda', g.moneda,
-               'metodo_pago_id', g.metodo_pago_id, 'nota', g.nota, 'anulado', g.anulado, 'creado_por', coalesce(c.nombre, '')) order by g.id)
+               'metodo_pago_id', g.metodo_pago_id, 'caja_id', g.caja_id, 'nota', g.nota, 'anulado', g.anulado,
+               'creado_por', coalesce(c.nombre, '')) order by g.id)
       from inventario.pagos g left join inventario.perfiles c on c.id = g.creado_por
-      where v_admin or g.bodega_id = v_maleta), '[]'),
+      where v_admin or g.bodega_id = v_maleta or g.caja_id = v_mia), '[]'),
+    -- Cajas: el admin y el bodeguero ven todas por nombre (para pasar plata); la plata, el bodeguero solo la de la suya
+    'cajas', case when v_admin or v_yo.rol = 'bodeguero' then coalesce((
+      select jsonb_agg(jsonb_build_object('id', c.id, 'bodega_id', c.bodega_id, 'nombre', coalesce(b.nombre, c.nombre),
+               'pais', coalesce(b.pais, c.pais), 'activa', c.activa and coalesce(b.activa, true))
+             order by c.bodega_id is null, coalesce(b.nombre, c.nombre))
+      from inventario.cajas c left join inventario.bodegas b on b.id = c.bodega_id), '[]') else '[]' end,
+    'dinero', coalesce((
+      select jsonb_agg(jsonb_build_object('id', d.id, 'tipo', d.tipo, 'fecha', d.fecha,
+               'origen_id', d.origen_id, 'valor_origen', d.valor_origen, 'moneda_origen', d.moneda_origen,
+               'destino_id', d.destino_id, 'valor_destino', d.valor_destino, 'moneda_destino', d.moneda_destino,
+               'nota', d.nota, 'anulado', d.anulado, 'creado_por', coalesce(c.nombre, '')) order by d.id)
+      from inventario.dinero d left join inventario.perfiles c on c.id = d.creado_por
+      where v_admin or (v_mia is not null and v_mia in (d.origen_id, d.destino_id))), '[]'),
     'stock', coalesce((
       select jsonb_agg(jsonb_build_array(s.bodega_id, s.producto_id, s.cantidad))
       from inventario.stock s where v_admin or s.bodega_id = v_maleta), '[]'),
@@ -674,22 +735,155 @@ declare
   v_yo inventario.perfiles := inventario.exigir(array['superadmin','admin']);
   v_mon text := (select x.moneda from inventario.bodegas b join inventario.paises x on x.nombre = b.pais
                  where b.id = nullif(p->>'bodega_id', '')::uuid and b.tipo = 'monitor');
+  v_caja uuid := nullif(p->>'caja_id', '')::uuid;
 begin
   if v_mon is null then raise exception 'Elige el monitor.'; end if;
   if coalesce(nullif(p->>'valor', '')::numeric, 0) <= 0 then raise exception 'Escribe el valor recibido.'; end if;
-  insert into inventario.pagos (bodega_id, fecha, valor, moneda, metodo_pago_id, nota, creado_por)
+  if v_caja is not null and not exists (select 1 from inventario.cajas where id = v_caja and activa) then raise exception 'Esa caja no existe.'; end if;
+  insert into inventario.pagos (bodega_id, fecha, valor, moneda, metodo_pago_id, caja_id, nota, creado_por)
   values ((p->>'bodega_id')::uuid, coalesce(nullif(p->>'fecha', '')::date, inventario.hoy()), (p->>'valor')::numeric, v_mon,
-          nullif(p->>'metodo_pago_id', '')::smallint, nullif(trim(p->>'nota'), ''), v_yo.id);
+          nullif(p->>'metodo_pago_id', '')::smallint, v_caja, nullif(trim(p->>'nota'), ''), v_yo.id);
   return jsonb_build_object('datos', inventario.datos(v_yo));
 end $$;
 
 -- Anula un pago mal registrado (solo admin). Deja de contar; el registro queda.
+-- Si entró a una caja y esa plata ya salió de ahí, no se deja (la caja quedaría en menos).
 create or replace function public.inv_pago_anular(p_id bigint)
 returns jsonb language plpgsql security definer set search_path = '' as $$
-declare v_yo inventario.perfiles := inventario.exigir(array['superadmin','admin']);
+declare
+  v_yo inventario.perfiles := inventario.exigir(array['superadmin','admin']);
+  v_p  inventario.pagos;
 begin
-  update inventario.pagos set anulado = true, anulado_por = v_yo.id, anulado_en = now() where id = p_id and not anulado;
-  if not found then raise exception 'Ese pago no existe o ya está anulado.'; end if;
+  select * into v_p from inventario.pagos where id = p_id and not anulado for update;
+  if v_p.id is null then raise exception 'Ese pago no existe o ya está anulado.'; end if;
+  if v_p.caja_id is not null then
+    perform 1 from inventario.cajas where id = v_p.caja_id for update;
+    if inventario.saldo(v_p.caja_id, v_p.moneda) < v_p.valor then
+      raise exception 'No se puede anular: esa plata ya salió de %. Anula primero lo que se hizo después.', inventario.caja_nombre(v_p.caja_id);
+    end if;
+  end if;
+  update inventario.pagos set anulado = true, anulado_por = v_yo.id, anulado_en = now() where id = p_id;
+  return jsonb_build_object('datos', inventario.datos(v_yo));
+end $$;
+
+-- ── Caja ─────────────────────────────────────────────────────────────
+-- Cada bodega nueva nace con su caja
+create or replace function inventario.caja_nueva()
+returns trigger language plpgsql security definer set search_path = '' as $$
+begin
+  insert into inventario.cajas (bodega_id) values (new.id) on conflict do nothing;
+  return new;
+end $$;
+drop trigger if exists bodega_caja on inventario.bodegas;
+create trigger bodega_caja after insert on inventario.bodegas
+  for each row when (new.tipo = 'bodega') execute function inventario.caja_nueva();
+
+create or replace function inventario.caja_nombre(p_caja uuid)
+returns text language sql stable security definer set search_path = '' as $$
+  select coalesce(b.nombre, c.nombre) from inventario.cajas c left join inventario.bodegas b on b.id = c.bodega_id where c.id = p_caja;
+$$;
+
+-- Número para mostrar en un aviso, con puntos de miles: 18000 → 18.000 · 1500.5 → 1.500,5
+create or replace function inventario.cifra(n numeric)
+returns text language sql immutable set search_path = '' as $$
+  select translate(rtrim(to_char(n, 'FM999,999,999,990.99'), '.'), ',.', '.,');
+$$;
+
+-- La caja de la bodega del bodeguero (los demás: vacío)
+create or replace function inventario.mi_caja(v_yo inventario.perfiles)
+returns uuid language sql stable security definer set search_path = '' as $$
+  select id from inventario.cajas where v_yo.rol = 'bodeguero' and bodega_id = v_yo.bodega_id;
+$$;
+
+-- Lo que hay en una caja de una moneda: dinero de monitores + entradas − gastos ± lo que se pasa (sin anulados)
+create or replace function inventario.saldo(p_caja uuid, p_moneda text)
+returns numeric language sql stable security definer set search_path = '' as $$
+  select coalesce((select sum(valor) from inventario.pagos where caja_id = p_caja and moneda = p_moneda and not anulado), 0)
+       + coalesce((select sum(valor_destino) from inventario.dinero where destino_id = p_caja and moneda_destino = p_moneda and not anulado), 0)
+       - coalesce((select sum(valor_origen) from inventario.dinero where origen_id = p_caja and moneda_origen = p_moneda and not anulado), 0);
+$$;
+
+-- Registra plata (admin, y el bodeguero en la caja de su bodega). No se saca más de lo que hay de esa moneda.
+-- p: {tipo: entrada|gasto|cambio, fecha, origen_id, valor_origen, moneda_origen, destino_id, valor_destino, moneda_destino, nota,
+--     monitor_id: (entrada) la maleta del monitor que entrega dinero de sus ventas → queda como pago suyo, en la moneda de su país}
+create or replace function public.inv_dinero(p jsonb)
+returns jsonb language plpgsql security definer set search_path = '' as $$
+declare
+  v_yo    inventario.perfiles := inventario.exigir(array['superadmin','admin','bodeguero']);
+  v_tipo  text := p->>'tipo';
+  v_mia   uuid := inventario.mi_caja(v_yo);
+  v_o     uuid;
+  v_d     uuid;
+  v_vo    numeric;
+  v_vd    numeric;
+  v_mo    text;
+  v_md    text;
+  v_fecha date := coalesce(nullif(p->>'fecha', '')::date, inventario.hoy());
+  v_nota  text := nullif(trim(p->>'nota'), '');
+  v_mal   inventario.bodegas;
+  v_hay   numeric;
+begin
+  if v_tipo is null or v_tipo not in ('entrada','gasto','cambio') then raise exception 'Tipo no válido.'; end if;
+  if v_tipo in ('gasto','cambio') then
+    v_o  := nullif(p->>'origen_id', '')::uuid;
+    v_vo := nullif(p->>'valor_origen', '')::numeric;
+    v_mo := upper(coalesce(trim(p->>'moneda_origen'), ''));
+    if v_o is null or not exists (select 1 from inventario.cajas where id = v_o and activa) then raise exception 'Elige de qué caja sale.'; end if;
+    if coalesce(v_vo, 0) <= 0 then raise exception 'Escribe cuánto sale.'; end if;
+    if v_mo !~ '^[A-Z]{3}$' then raise exception 'Elige la moneda.'; end if;
+  end if;
+  if v_tipo in ('entrada','cambio') then
+    v_d  := nullif(p->>'destino_id', '')::uuid;
+    v_vd := nullif(p->>'valor_destino', '')::numeric;
+    v_md := upper(coalesce(trim(p->>'moneda_destino'), ''));
+    if v_d is null or not exists (select 1 from inventario.cajas where id = v_d and activa) then raise exception 'Elige a qué caja llega.'; end if;
+    if coalesce(v_vd, 0) <= 0 then raise exception 'Escribe cuánto llega.'; end if;
+    if v_md !~ '^[A-Z]{3}$' and nullif(p->>'monitor_id', '') is null then raise exception 'Elige la moneda.'; end if;
+  end if;
+  if v_o = v_d and v_mo = v_md then raise exception 'Sale y llega a la misma caja en la misma moneda.'; end if;
+  if v_tipo = 'gasto' and v_nota is null then raise exception 'Escribe en qué se gastó.'; end if;
+  -- Bodeguero: solo la caja de su bodega (de ahí sale o ahí entra)
+  if v_yo.rol = 'bodeguero' and (v_mia is null or not coalesce(case when v_tipo = 'entrada' then v_d = v_mia else v_o = v_mia end, false)) then
+    raise exception 'Solo puedes mover la plata de la caja de tu bodega.';
+  end if;
+
+  -- Dinero de las ventas de un monitor: queda como pago suyo (baja lo que debe) y entra a la caja
+  if v_tipo = 'entrada' and nullif(p->>'monitor_id', '') is not null then
+    select * into v_mal from inventario.bodegas where id = (p->>'monitor_id')::uuid and tipo = 'monitor';
+    if v_mal.id is null then raise exception 'Elige el monitor.'; end if;
+    insert into inventario.pagos (bodega_id, fecha, valor, moneda, caja_id, nota, creado_por)
+    values (v_mal.id, v_fecha, v_vd, (select moneda from inventario.paises where nombre = v_mal.pais), v_d, v_nota, v_yo.id);
+    return jsonb_build_object('datos', inventario.datos(v_yo));
+  end if;
+
+  if v_o is not null then
+    perform 1 from inventario.cajas where id = v_o for update;
+    v_hay := inventario.saldo(v_o, v_mo);
+    if v_vo > v_hay then
+      raise exception 'No hay suficiente en %: hay % %, sale % %.', inventario.caja_nombre(v_o), inventario.cifra(v_hay), v_mo, inventario.cifra(v_vo), v_mo;
+    end if;
+  end if;
+  insert into inventario.dinero (tipo, fecha, origen_id, valor_origen, moneda_origen, destino_id, valor_destino, moneda_destino, nota, creado_por)
+  values (v_tipo, v_fecha, v_o, v_vo, nullif(v_mo, ''), v_d, v_vd, nullif(v_md, ''), v_nota, v_yo.id);
+  return jsonb_build_object('datos', inventario.datos(v_yo));
+end $$;
+
+-- Anula un registro de plata (solo admin). Deja de contar; el registro queda.
+create or replace function public.inv_dinero_anular(p_id bigint)
+returns jsonb language plpgsql security definer set search_path = '' as $$
+declare
+  v_yo inventario.perfiles := inventario.exigir(array['superadmin','admin']);
+  v_x  inventario.dinero;
+begin
+  select * into v_x from inventario.dinero where id = p_id and not anulado for update;
+  if v_x.id is null then raise exception 'Ese registro no existe o ya está anulado.'; end if;
+  if v_x.destino_id is not null then
+    perform 1 from inventario.cajas where id = v_x.destino_id for update;
+    if inventario.saldo(v_x.destino_id, v_x.moneda_destino) < v_x.valor_destino then
+      raise exception 'No se puede anular: esa plata ya salió de %. Anula primero lo que se hizo después.', inventario.caja_nombre(v_x.destino_id);
+    end if;
+  end if;
+  update inventario.dinero set anulado = true, anulado_por = v_yo.id, anulado_en = now() where id = p_id;
   return jsonb_build_object('datos', inventario.datos(v_yo));
 end $$;
 

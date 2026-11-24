@@ -1,0 +1,393 @@
+---
+// Caja (pedido de RD, 2026-11-23): cuánta plata hay en la caja de cada bodega y en cuentas sueltas (la de Don Octavio),
+// de CADA moneda por separado. Entra el dinero que entregan los monitores y otros ingresos; salen los gastos (con nota);
+// la casa de cambio pasa plata de una caja a otra, en la misma u otra moneda (pesos dominicanos → dólares, o como sea).
+// Admin: todas las cajas del país elegido. Bodeguero: solo la caja de su bodega.
+import AppLayout from "../layouts/AppLayout.astro";
+import PageHeader from "../components/ui/PageHeader.astro";
+import Modal from "../components/ui/Modal.astro";
+import Select from "../components/ui/Select.astro";
+import DatePicker from "../components/ui/DatePicker.astro";
+import FormError from "../components/ui/FormError.astro";
+---
+
+<AppLayout title="Caja">
+  <PageHeader title="Caja" subtitle=" ">
+    <button slot="actions" type="button" class="btn btn-ghost" data-nuevo="gasto"><i class="bi bi-dash-circle" aria-hidden="true"></i>Gasto</button>
+    <button slot="actions" type="button" class="btn btn-ghost" data-nuevo="cambio"><i class="bi bi-arrow-left-right" aria-hidden="true"></i>Casa de cambio</button>
+    <button slot="actions" type="button" class="btn btn-primary" data-nuevo="entrada"><i class="bi bi-plus-lg" aria-hidden="true"></i>Entrada</button>
+  </PageHeader>
+
+  <!-- Lo que hay en cada caja, por moneda -->
+  <section class="saldos" data-saldos></section>
+
+  <section class="card card-list" data-table>
+    <div class="toolbar">
+      <Select value="" filter="caja" label="Caja" options={[{ value: "", label: "Todas las cajas" }]} id="f-caja" />
+      <Select value="" filter="tipo" label="Tipo" options={[{ value: "", label: "Todo" }, { value: "entrada", label: "Entradas" }, { value: "gasto", label: "Gastos" }, { value: "cambio", label: "Casa de cambio" }]} />
+      <label class="input-icon grow">
+        <i class="bi bi-search" aria-hidden="true"></i>
+        <input class="input" type="search" placeholder="Buscar nota, monitor o caja…" aria-label="Buscar" data-filter-q />
+      </label>
+    </div>
+    <div class="table-wrap">
+      <table class="table table-cards">
+        <thead>
+          <tr>
+            <th data-card-title>Fecha</th>
+            <th>Caja</th>
+            <th>Qué</th>
+            <th>Nota</th>
+            <th class="num">Valor</th>
+            <th>Quién</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody data-body></tbody>
+      </table>
+    </div>
+    <div class="empty" data-empty hidden>
+      <i class="bi bi-cash-coin" aria-hidden="true"></i>
+      <p class="muted">Todavía no hay plata registrada.</p>
+    </div>
+  </section>
+
+  <Modal id="dinero-modal" title="Entrada">
+    <form class="form-grid" data-form novalidate>
+      <div class="span-2"><FormError /></div>
+      <p class="span-2 muted small" data-ayuda></p>
+      <div class="field span-2">
+        <span class="label">Fecha</span>
+        <DatePicker name="fecha" label="Fecha" />
+      </div>
+
+      <!-- Sale (gasto y casa de cambio) -->
+      <div class="field span-2" data-lado="sale">
+        <span class="label" data-sale-label>Sale de</span>
+        <Select name="origen" placeholder="Elegir caja" options={[]} />
+      </div>
+      <div class="field" data-lado="sale">
+        <label for="dn-vo" data-vo-label>Cuánto sale</label>
+        <input id="dn-vo" name="valor_origen" class="input tnum" type="text" inputmode="decimal" data-money placeholder="0" />
+        <span class="hint" data-hay></span>
+      </div>
+      <div class="field" data-lado="sale">
+        <span class="label">Moneda</span>
+        <Select name="moneda_origen" searchable label="Moneda" options={[]} />
+      </div>
+
+      <!-- Llega (entrada y casa de cambio) -->
+      <div class="field span-2" data-lado="llega">
+        <span class="label" data-llega-label>Llega a</span>
+        <Select name="destino" placeholder="Elegir caja" options={[]} />
+      </div>
+      <div class="field span-2" data-solo="entrada">
+        <span class="label">¿Quién la trae?</span>
+        <Select name="monitor" searchable label="Quién la trae" options={[]} />
+        <span class="hint" data-monitor-hint></span>
+      </div>
+      <div class="field" data-lado="llega">
+        <label for="dn-vd" data-vd-label>Cuánto llega</label>
+        <input id="dn-vd" name="valor_destino" class="input tnum" type="text" inputmode="decimal" data-money placeholder="0" />
+        <span class="hint" data-tasa></span>
+      </div>
+      <div class="field" data-lado="llega" data-moneda-llega>
+        <span class="label">Moneda</span>
+        <Select name="moneda_destino" searchable label="Moneda" options={[]} />
+      </div>
+
+      <div class="field span-2">
+        <label for="dn-nota" data-nota-label>Nota</label>
+        <input id="dn-nota" name="nota" class="input" placeholder="" />
+      </div>
+    </form>
+    <button slot="footer" type="button" class="btn btn-ghost" data-modal-close>Cancelar</button>
+    <button slot="footer" type="button" class="btn btn-primary" data-save>Guardar</button>
+  </Modal>
+</AppLayout>
+
+<style>
+  .saldos {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(min(100%, 240px), 1fr));
+    gap: var(--page-gap);
+  }
+
+  .saldos :global(.saldo) {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2);
+    padding: var(--space-4);
+    text-align: left;
+    color: inherit;
+    font: inherit;
+    cursor: pointer;
+  }
+
+  .saldos :global(.saldo[aria-pressed="true"]) {
+    border-color: var(--clr-primary);
+  }
+
+  .saldos :global(.saldo-monedas) {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+
+  .saldos :global(.saldo-valor) {
+    font-size: var(--text-xl);
+    font-weight: 700;
+    line-height: 1.2;
+    font-variant-numeric: tabular-nums;
+  }
+
+  [data-body] :global(.entra) {
+    color: var(--clr-success);
+  }
+
+  [data-body] :global(.sale) {
+    color: var(--clr-danger);
+  }
+</style>
+
+<script>
+  import "../lib/ui";
+  import { initTableFilter } from "../lib/ui/table-filter";
+  import {
+    cajas,
+    todasCajas,
+    caja,
+    miCaja,
+    lineasCaja,
+    saldos,
+    saldo,
+    bodega,
+    bodegas,
+    pais,
+    esAdmin,
+    paisActual,
+    registrarDinero,
+    anularDinero,
+    anularPago,
+    monedaDe,
+    MONEDAS,
+    type TipoDinero,
+    type LineaCaja,
+  } from "../lib/store";
+  import { money, day, esc, searchText, intentar, parseNum, dsSelect, today, urlParam } from "../lib/view";
+
+  const scope = document.querySelector<HTMLElement>("[data-table]")!;
+  const body = scope.querySelector<HTMLElement>("[data-body]")!;
+  const saldosEl = document.querySelector<HTMLElement>("[data-saldos]")!;
+  const fCaja = dsSelect(scope, "#f-caja");
+  const table = initTableFilter(scope, () => marcarTarjeta());
+  const admin = esAdmin();
+  const mia = miCaja();
+
+  /** Moneda del país de una caja. */
+  const monedaCaja = (id?: string | null) => pais(caja(id)?.pais)?.moneda ?? "USD";
+  const nombreMaleta = (id?: string | null) => bodega(id)?.nombre.replace(/^Maleta /, "") ?? "Monitor";
+
+  // ── Saldos ──
+  function pintarSaldos() {
+    const s = saldos();
+    saldosEl.innerHTML = cajas()
+      .map((c) => {
+        const mon = [...(s.get(c.id) ?? new Map<string, number>())].filter(([, v]) => Math.abs(v) > 0.004);
+        const filas = mon.length
+          ? mon.map(([m, v]) => `<span class="saldo-valor">${money(v, m)}</span>`).join("")
+          : '<span class="muted">Sin plata registrada</span>';
+        return `<button type="button" class="card saldo" data-caja="${c.id}" aria-pressed="false">
+          <span class="caps">${esc(c.nombre)}</span>
+          <span class="saldo-monedas">${filas}</span>
+          <span class="muted small">${c.bodega_id ? "Caja de la bodega" : "Cuenta"} · ${esc(c.pais)}</span>
+        </button>`;
+      })
+      .join("");
+    marcarTarjeta();
+  }
+  function marcarTarjeta() {
+    saldosEl.querySelectorAll<HTMLElement>("[data-caja]").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.caja === fCaja.value)));
+  }
+  saldosEl.addEventListener("click", (e) => {
+    const b = (e.target as HTMLElement).closest<HTMLElement>("[data-caja]");
+    if (!b) return;
+    const id = b.dataset.caja === fCaja.value ? "" : b.dataset.caja!;
+    fCaja.value = id;
+    fCaja.dispatchEvent(new Event("change", { bubbles: true }));
+  });
+
+  // ── Lista ──
+  const QUE: Record<LineaCaja["tipo"], { label: string; icon: string }> = {
+    entrada: { label: "Entrada", icon: "bi-plus-circle" },
+    monitor: { label: "Entregó", icon: "bi-briefcase" },
+    gasto: { label: "Gasto", icon: "bi-dash-circle" },
+    cambio: { label: "Casa de cambio", icon: "bi-arrow-left-right" },
+  };
+  function render() {
+    const ids = new Set(cajas().map((c) => c.id));
+    const ls = lineasCaja().filter((l) => ids.has(l.caja_id));
+    body.innerHTML = ls
+      .map((l) => {
+        const q = QUE[l.tipo];
+        let detalle = q.label;
+        if (l.tipo === "monitor") detalle = `Entregó ${esc(nombreMaleta(l.bodega_id))} <span class="muted">(monitor)</span>`;
+        if (l.otra) detalle = l.otra.sale ? `Llegó de ${esc(caja(l.otra.caja_id)?.nombre)} <span class="muted">(salió ${money(l.otra.valor, l.otra.moneda)})</span>` : `A ${esc(caja(l.otra.caja_id)?.nombre)} <span class="muted">(llegó ${money(l.otra.valor, l.otra.moneda)})</span>`;
+        const anular = admin && !l.anulado ? `<button type="button" class="btn btn-subtle btn-icon btn-sm" data-anular="${l.dinero_id ?? ""}" data-pago="${l.pago_id ?? ""}" aria-label="Anular" title="Anular"><i class="bi bi-x-circle" aria-hidden="true"></i></button>` : "";
+        return `<tr data-row class="${l.anulado ? "anulado" : ""}" data-caja="${l.caja_id}" data-tipo="${l.tipo === "monitor" ? "entrada" : l.tipo}"
+            data-text="${esc(searchText(l.nota, caja(l.caja_id)?.nombre, l.tipo === "monitor" ? nombreMaleta(l.bodega_id) : "", l.otra ? caja(l.otra.caja_id)?.nombre : "", q.label))}">
+          <td class="nowrap">${day(l.fecha)}</td>
+          <td>${esc(caja(l.caja_id)?.nombre)}</td>
+          <td><i class="bi ${q.icon} muted" aria-hidden="true"></i> ${detalle}${l.anulado ? ' <span class="badge danger">Anulado</span>' : ""}</td>
+          <td>${esc(l.nota ?? "—")}</td>
+          <td class="num tnum strong nowrap ${l.valor < 0 ? "sale" : "entra"}">${l.valor < 0 ? "−" : "+"} ${money(Math.abs(l.valor), l.moneda)}</td>
+          <td>${esc(l.creado_por)}</td>
+          <td class="cell-actions">${anular}</td>
+        </tr>`;
+      })
+      .join("");
+    table.rescan();
+    pintarSaldos();
+    const sub = mia ? caja(mia)?.nombre ?? "Tu bodega" : paisActual() || "Todos los países";
+    document.querySelector("[data-page-subtitle]")!.textContent = sub;
+  }
+
+  // Filtro de caja: las del país elegido (el bodeguero no lo necesita)
+  fCaja.setOptions([{ value: "", label: "Todas las cajas" }, ...cajas().map((c) => ({ value: c.id, label: c.nombre }))]);
+  if (mia || cajas().length < 2) fCaja.hidden = true;
+  render();
+  const desdeUrl = urlParam("caja");
+  if (desdeUrl && cajas().some((c) => c.id === desdeUrl)) {
+    fCaja.value = desdeUrl;
+    fCaja.dispatchEvent(new Event("change", { bubbles: true }));
+  }
+
+  body.addEventListener("click", async (e) => {
+    const btn = (e.target as HTMLElement).closest<HTMLElement>("[data-anular]");
+    if (!btn) return;
+    const ok = await window.ui.confirm({ tone: "danger", title: "¿Anular este registro?", message: "Deja de contar en la caja. Queda en la lista marcado como anulado.", confirmText: "Anular" });
+    if (!ok) return;
+    const pago = Number(btn.dataset.pago);
+    if (await intentar(null, () => (pago ? anularPago(pago) : anularDinero(Number(btn.dataset.anular))), "Registro anulado")) render();
+  });
+
+  // ── Registrar ──
+  const modal = document.getElementById("dinero-modal")!;
+  const form = modal.querySelector<HTMLFormElement>("[data-form]")!;
+  const sel = (n: string) => dsSelect(form, `ds-select[name=${n}]`);
+  const origen = sel("origen"), destino = sel("destino"), monO = sel("moneda_origen"), monD = sel("moneda_destino"), monitor = sel("monitor");
+  const fecha = form.querySelector<HTMLElement & { value: string }>("ds-date[name=fecha]")!;
+  const inp = (n: string) => form.querySelector<HTMLInputElement>(`[name=${n}]`)!;
+  const txt = (s: string, t: string) => (form.querySelector<HTMLElement>(s)!.textContent = t);
+  let tipo: TipoDinero = "entrada";
+
+  /** Monedas para elegir: primero las que ya hay en esa caja, la de su país y el dólar; luego todas. */
+  function opcionesMoneda(cajaId: string) {
+    const primero = [...new Set([...(saldos().get(cajaId)?.keys() ?? []), monedaCaja(cajaId), "USD"])];
+    const todas = [...primero.map((m) => MONEDAS.find((x) => x.value === m) ?? { value: m, label: m }), ...MONEDAS.filter((x) => !primero.includes(x.value))];
+    return todas.map((x) => ({ value: x.value, label: x.label, hint: cajaId && saldo(cajaId, x.value) ? `Hay ${money(saldo(cajaId, x.value), x.value)}` : undefined }));
+  }
+  const opcionesCaja = (lista = cajas()) => lista.map((c) => ({ value: c.id, label: c.nombre, hint: c.bodega_id ? "Caja de la bodega" : "Cuenta" }));
+
+  function syncSale() {
+    monO.setOptions(opcionesMoneda(origen.value));
+    if (!monO.value) monO.value = monedaCaja(origen.value);
+    syncHay();
+  }
+  function syncHay() {
+    txt("[data-hay]", origen.value && monO.value ? `Hay ${money(saldo(origen.value, monO.value), monO.value)}` : "");
+    syncTasa();
+  }
+  function syncLlega() {
+    monD.setOptions(opcionesMoneda(destino.value));
+    if (!monD.value) monD.value = tipo === "cambio" && monO.value !== "USD" ? "USD" : monedaCaja(destino.value);
+    // Monitores que pueden traer plata a esta caja: los del mismo país
+    const pa = caja(destino.value)?.pais;
+    const ms = bodegas().filter((b) => b.tipo === "monitor" && b.activa && b.pais === pa);
+    const antes = monitor.value;
+    monitor.setOptions([{ value: "", label: "Otro ingreso", hint: "No es de un monitor" }, ...ms.map((b) => ({ value: b.id, label: nombreMaleta(b.id), hint: "Dinero de sus ventas" }))]);
+    monitor.value = ms.some((b) => b.id === antes) ? antes : "";
+    syncMonitor();
+  }
+  function syncMonitor() {
+    const m = tipo === "entrada" && monitor.value ? bodega(monitor.value) : undefined;
+    // El dinero de un monitor va en la moneda de su país (así baja lo que debe)
+    form.querySelector<HTMLElement>("[data-moneda-llega]")!.hidden = !!m;
+    txt("[data-monitor-hint]", m ? `Cuenta como dinero entregado por el monitor, en ${monedaDe(m).moneda}.` : "");
+  }
+  function syncTasa() {
+    const vo = parseNum(inp("valor_origen").value);
+    const vd = parseNum(inp("valor_destino").value);
+    txt("[data-tasa]", tipo === "cambio" && vo > 0 && vd > 0 && monO.value !== monD.value ? `1 ${monD.value} = ${(vo / vd).toLocaleString("es-CO", { maximumFractionDigits: 2 })} ${monO.value}` : "");
+  }
+  origen.addEventListener("change", () => ((monO.value = ""), syncSale()));
+  monO.addEventListener("change", syncHay);
+  destino.addEventListener("change", () => ((monD.value = ""), syncLlega()));
+  monD.addEventListener("change", syncTasa);
+  monitor.addEventListener("change", syncMonitor);
+  inp("valor_origen").addEventListener("input", syncTasa);
+  inp("valor_destino").addEventListener("input", syncTasa);
+
+  const TEXTOS: Record<TipoDinero, { titulo: string; ayuda: string; nota: string; ph: string }> = {
+    entrada: { titulo: "Entrada", ayuda: "Plata que llega a la caja: lo que entrega un monitor u otro ingreso.", nota: "Nota", ph: "Ej. Curso Santo Domingo 22–23 nov" },
+    gasto: { titulo: "Gasto", ayuda: "Plata que sale de la caja.", nota: "¿En qué se gastó?", ph: "Ej. Transporte, almuerzo, arriendo" },
+    cambio: { titulo: "Casa de cambio", ayuda: "Plata que sale de una caja y llega a otra, en la misma u otra moneda.", nota: "Nota", ph: "Ej. Casa de cambio La Nacional" },
+  };
+
+  function abrir(t: TipoDinero) {
+    tipo = t;
+    form.reset();
+    intentar(form, () => {});
+    const x = TEXTOS[t];
+    modal.querySelector("[data-modal-title]")!.textContent = x.titulo;
+    txt("[data-ayuda]", x.ayuda);
+    txt("[data-nota-label]", x.nota);
+    inp("nota").placeholder = x.ph;
+    txt("[data-sale-label]", t === "gasto" ? "¿De qué caja?" : "Sale de");
+    txt("[data-llega-label]", t === "entrada" ? "¿A qué caja?" : "Llega a");
+    txt("[data-vo-label]", t === "gasto" ? "Valor" : "Cuánto sale");
+    txt("[data-vd-label]", t === "entrada" ? "Valor" : "Cuánto llega");
+    form.querySelectorAll<HTMLElement>("[data-lado=sale]").forEach((el) => (el.hidden = t === "entrada"));
+    form.querySelectorAll<HTMLElement>("[data-lado=llega]").forEach((el) => (el.hidden = t === "gasto"));
+    form.querySelectorAll<HTMLElement>("[data-solo=entrada]").forEach((el) => (el.hidden = t !== "entrada"));
+    fecha.value = today();
+    // Sale de / llega a: el bodeguero, su caja; en un cambio, la otra puede ser cualquiera (p. ej. la cuenta de Don Octavio)
+    const propias = opcionesCaja();
+    const elegida = fCaja.value || (cajas()[0]?.id ?? "");
+    origen.setOptions(propias);
+    destino.setOptions(t === "cambio" ? opcionesCaja(todasCajas()) : propias);
+    origen.value = elegida;
+    monO.value = "";
+    monD.value = "";
+    if (t === "cambio") {
+      const cuenta = todasCajas().find((c) => !c.bodega_id && c.id !== elegida && (!caja(elegida) || c.pais === caja(elegida)!.pais));
+      destino.value = cuenta?.id ?? "";
+    } else destino.value = elegida;
+    syncSale();
+    syncLlega();
+    syncTasa();
+    window.ui.openModal("dinero-modal");
+  }
+  document.querySelectorAll<HTMLElement>("[data-nuevo]").forEach((b) => b.addEventListener("click", () => abrir(b.dataset.nuevo as TipoDinero)));
+
+  modal.querySelector("[data-save]")!.addEventListener("click", async () => {
+    const vo = parseNum(inp("valor_origen").value);
+    const vd = parseNum(inp("valor_destino").value);
+    const datos = {
+      tipo,
+      fecha: fecha.value,
+      origen_id: tipo !== "entrada" ? origen.value : undefined,
+      valor_origen: tipo !== "entrada" ? vo : undefined,
+      moneda_origen: tipo !== "entrada" ? monO.value : undefined,
+      destino_id: tipo !== "gasto" ? destino.value : undefined,
+      valor_destino: tipo !== "gasto" ? vd : undefined,
+      moneda_destino: tipo !== "gasto" ? monD.value : undefined,
+      monitor_id: tipo === "entrada" && monitor.value ? monitor.value : undefined,
+      nota: inp("nota").value,
+    };
+    const aviso = tipo === "gasto" ? `Gasto de ${money(vo, monO.value)} guardado` : tipo === "cambio" ? "Cambio guardado" : `Entrada de ${money(vd, monitor.value ? monedaDe(bodega(monitor.value)).moneda : monD.value)} guardada`;
+    if (!(await intentar(form, () => registrarDinero(datos), aviso))) return;
+    window.ui.closeModal("dinero-modal");
+    render();
+  });
+</script>

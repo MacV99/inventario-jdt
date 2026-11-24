@@ -42,7 +42,25 @@ export interface Movimiento {
   items: Item[];
 }
 /** Dinero que un monitor entrega de sus ventas. */
-export interface Pago { id: number; bodega_id: string; fecha: string; valor: number; moneda: string; metodo_pago_id?: number | null; nota?: string | null; anulado?: boolean; creado_por: string }
+export interface Pago { id: number; bodega_id: string; fecha: string; valor: number; moneda: string; metodo_pago_id?: number | null; /** Caja donde entró (vacío = ninguna). */ caja_id?: string | null; nota?: string | null; anulado?: boolean; creado_por: string }
+/** Dónde está la plata: la caja de una bodega (bodega_id) o una cuenta suelta (p. ej. la de Don Octavio). */
+export interface Caja { id: string; bodega_id?: string | null; nombre: string; pais: string; activa: boolean }
+export type TipoDinero = "entrada" | "gasto" | "cambio";
+/** entrada: llega a una caja · gasto: sale · cambio: sale de una caja (en una moneda) y llega a otra (en la misma u otra). */
+export interface Dinero {
+  id: number;
+  tipo: TipoDinero;
+  fecha: string;
+  origen_id?: string | null;
+  valor_origen?: number | null;
+  moneda_origen?: string | null;
+  destino_id?: string | null;
+  valor_destino?: number | null;
+  moneda_destino?: string | null;
+  nota?: string | null;
+  anulado: boolean;
+  creado_por: string;
+}
 export interface Yo { id: string; nombre: string; usuario: string; rol: Rol; bodega_id?: string | null }
 
 interface State {
@@ -56,6 +74,8 @@ interface State {
   metodos_pago: MetodoPago[];
   movimientos: Movimiento[];
   pagos: Pago[];
+  cajas: Caja[];
+  dinero: Dinero[];
   /** Solo en modo real: stock y costo promedio ya calculados por la base. */
   stock?: [string, string, number][];
   costos?: Record<string, number>;
@@ -115,7 +135,7 @@ export const ROL: Record<Rol, { label: string }> = {
 };
 
 /** Pantallas del bodeguero (las demás lo mandan a Inventario). */
-export const PAGINAS_BODEGUERO = ["/inventario", "/movimientos"];
+export const PAGINAS_BODEGUERO = ["/inventario", "/movimientos", "/caja"];
 /** Tipos que registra el bodeguero y qué lado tiene que ser su bodega. */
 export const LADO_BODEGUERO: Partial<Record<TipoMov, "origen" | "destino">> = {
   compra: "destino",
@@ -129,7 +149,7 @@ export const LADO_BODEGUERO: Partial<Record<TipoMov, "origen" | "destino">> = {
 const KEY_DEMO = "jdt-inventario-demo";
 const KEY_CACHE = "jdt-inv-datos";
 const KEY_VER = "jdt-inv-ver-como";
-const VERSION = 7;
+const VERSION = 8;
 const hoy = () => new Date().toLocaleDateString("en-CA"); // AAAA-MM-DD en la hora local
 
 /** Prueba local sin sesión: datos de ejemplo (también en una copia armada con PUBLIC_DEMO=1). En la página publicada nunca. */
@@ -313,6 +333,74 @@ export const movimientos = () =>
     .movimientos.filter((m) => (!paisActual() || delPais(m.origen_id) || delPais(m.destino_id)) && (mio(m.origen_id) || mio(m.destino_id)))
     .reverse();
 export const pagos = () => load().pagos.filter((p) => delPais(p.bodega_id)).sort((a, b) => b.id - a.id);
+// ── Caja ──
+/** La caja de la bodega del bodeguero (los demás: vacío). */
+export const miCaja = () => (miBodega() ? load().cajas.find((c) => c.bodega_id === miBodega())?.id ?? "" : "");
+/** Cajas activas del país elegido (el bodeguero: solo la suya). Primero las de bodegas, luego las cuentas. */
+export const cajas = () =>
+  load().cajas.filter((c) => c.activa && (miCaja() ? c.id === miCaja() : !paisActual() || c.pais === paisActual()));
+/** Todas las activas (para elegir a dónde se pasa la plata). */
+export const todasCajas = () => load().cajas.filter((c) => c.activa);
+export const caja = (id?: string | null) => load().cajas.find((c) => c.id === id);
+/** Caja de una bodega. */
+export const cajaDe = (bodegaId?: string | null) => load().cajas.find((c) => c.bodega_id === bodegaId);
+
+/** Una línea de plata de una caja: lo que llega (+) o sale (−), con lo que pasó al otro lado si es un cambio. */
+export interface LineaCaja {
+  clave: string;
+  fecha: string;
+  tipo: TipoDinero | "monitor";
+  caja_id: string;
+  valor: number;
+  moneda: string;
+  /** Del cambio: la otra caja y lo que salió o llegó allá. */
+  otra?: { caja_id: string; valor: number; moneda: string; sale: boolean };
+  /** Pago de monitor: su maleta. */
+  bodega_id?: string;
+  nota?: string | null;
+  anulado: boolean;
+  creado_por: string;
+  /** Para anular: el registro de plata o el pago. */
+  dinero_id?: number;
+  pago_id?: number;
+}
+
+/** Todo lo que entra y sale de las cajas, del más nuevo al más viejo. Un cambio entre dos cajas sale una vez por cada una. */
+export function lineasCaja(): LineaCaja[] {
+  const s = load();
+  const out: LineaCaja[] = [];
+  for (const p of s.pagos) {
+    if (!p.caja_id) continue;
+    out.push({ clave: `p${p.id}`, fecha: p.fecha, tipo: "monitor", caja_id: p.caja_id, valor: p.valor, moneda: p.moneda, bodega_id: p.bodega_id, nota: p.nota, anulado: !!p.anulado, creado_por: p.creado_por, pago_id: p.id });
+  }
+  for (const d of s.dinero) {
+    const base = { fecha: d.fecha, tipo: d.tipo, nota: d.nota, anulado: d.anulado, creado_por: d.creado_por, dinero_id: d.id };
+    if (d.origen_id)
+      out.push({ ...base, clave: `d${d.id}o`, caja_id: d.origen_id, valor: -Number(d.valor_origen), moneda: d.moneda_origen!, otra: d.destino_id ? { caja_id: d.destino_id, valor: Number(d.valor_destino), moneda: d.moneda_destino!, sale: false } : undefined });
+    if (d.destino_id)
+      out.push({ ...base, clave: `d${d.id}d`, caja_id: d.destino_id, valor: Number(d.valor_destino), moneda: d.moneda_destino!, otra: d.origen_id ? { caja_id: d.origen_id, valor: Number(d.valor_origen), moneda: d.moneda_origen!, sale: true } : undefined });
+  }
+  return out.sort((a, b) => b.fecha.localeCompare(a.fecha) || b.clave.localeCompare(a.clave, undefined, { numeric: true }));
+}
+
+/** Lo que hay en cada caja de cada moneda: caja → moneda → valor (sin anulados). */
+export function saldos(state = load()) {
+  const m = new Map<string, Map<string, number>>();
+  const sumar = (c: string, mon: string, v: number) => {
+    const x = m.get(c) ?? new Map<string, number>();
+    x.set(mon, (x.get(mon) ?? 0) + v);
+    m.set(c, x);
+  };
+  for (const p of state.pagos) if (p.caja_id && !p.anulado) sumar(p.caja_id, p.moneda, Number(p.valor));
+  for (const d of state.dinero) {
+    if (d.anulado) continue;
+    if (d.origen_id) sumar(d.origen_id, d.moneda_origen!, -Number(d.valor_origen));
+    if (d.destino_id) sumar(d.destino_id, d.moneda_destino!, Number(d.valor_destino));
+  }
+  return m;
+}
+export const saldo = (cajaId: string, moneda: string, state = load()) => saldos(state).get(cajaId)?.get(moneda) ?? 0;
+
 export const bodega = (id?: string | null) => load().bodegas.find((b) => b.id === id);
 export const producto = (id: string) => load().productos.find((p) => p.id === id);
 export const metodoPago = (id?: number | null) => load().metodos_pago.find((m) => m.id === id);
@@ -688,7 +776,10 @@ function bodegaLocal(b: BodegaIn) {
   if (b.pais.trim() && !pais(b.pais.trim())) throw new Error(`El país «${b.pais.trim()}» no está en Países y monedas.`);
   const id = old?.id ?? nuevoId("b", s.bodegas.filter((x) => x.tipo === "bodega"));
   if (old) Object.assign(old, { nombre: b.nombre.trim(), ciudad: b.ciudad.trim() || old.ciudad, pais: b.pais.trim() || old.pais });
-  else s.bodegas.push({ id, nombre: b.nombre.trim(), ciudad: b.ciudad.trim(), pais: b.pais.trim(), tipo: "bodega", activa: true });
+  else {
+    s.bodegas.push({ id, nombre: b.nombre.trim(), ciudad: b.ciudad.trim(), pais: b.pais.trim(), tipo: "bodega", activa: true });
+    s.cajas.push({ id: `k-${id}`, bodega_id: id, nombre: b.nombre.trim(), pais: b.pais.trim(), activa: true });
+  }
   return id;
 }
 
@@ -826,11 +917,87 @@ export async function cambiarUsuario(c: { id: string; rol?: "admin" | "monitor" 
   saveDemo();
 }
 
-export async function registrarPago(bodegaId: string, valor: number, nota: string, metodo_pago_id?: number) {
+/** cajaId: en qué caja entró (vacío = en ninguna). */
+export async function registrarPago(bodegaId: string, valor: number, nota: string, metodo_pago_id?: number, cajaId = "", fecha = hoy()) {
   if (!(valor > 0)) throw new Error("Escribe el valor recibido.");
-  if (!DEMO) return void (await llamar("inv_pago", { p: { bodega_id: bodegaId, valor, nota, metodo_pago_id, fecha: hoy() } }));
+  if (!DEMO) return void (await llamar("inv_pago", { p: { bodega_id: bodegaId, valor, nota, metodo_pago_id, caja_id: cajaId || undefined, fecha } }));
   const s = load();
-  s.pagos.push({ id: Math.max(0, ...s.pagos.map((p) => p.id)) + 1, bodega_id: bodegaId, fecha: hoy(), valor, moneda: monedaDe(bodega(bodegaId)).moneda, metodo_pago_id, nota: nota.trim() || undefined, creado_por: yo().nombre });
+  if (cajaId && !s.cajas.some((c) => c.id === cajaId && c.activa)) throw new Error("Esa caja no existe.");
+  s.pagos.push({ id: Math.max(0, ...s.pagos.map((p) => p.id)) + 1, bodega_id: bodegaId, fecha, valor, moneda: monedaDe(bodega(bodegaId)).moneda, metodo_pago_id, caja_id: cajaId || null, nota: nota.trim() || undefined, creado_por: yo().nombre });
+  saveDemo();
+}
+
+export interface NuevoDinero {
+  tipo: TipoDinero;
+  fecha?: string;
+  origen_id?: string;
+  valor_origen?: number;
+  moneda_origen?: string;
+  destino_id?: string;
+  valor_destino?: number;
+  moneda_destino?: string;
+  nota?: string;
+  /** Entrada: la maleta del monitor que entrega dinero de sus ventas (queda como pago suyo, en la moneda de su país). */
+  monitor_id?: string;
+}
+
+/** Registra plata en una caja (mismas reglas que la base: no se saca más de lo que hay de esa moneda). */
+export async function registrarDinero(x: NuevoDinero) {
+  if (!DEMO) return void (await llamar("inv_dinero", { p: x }));
+  const s = load();
+  const sale = x.tipo !== "entrada";
+  const llega = x.tipo !== "gasto";
+  const activa = (id?: string) => s.cajas.some((c) => c.id === id && c.activa);
+  if (sale) {
+    if (!activa(x.origen_id)) throw new Error("Elige de qué caja sale.");
+    if (!(Number(x.valor_origen) > 0)) throw new Error("Escribe cuánto sale.");
+    if (!x.moneda_origen) throw new Error("Elige la moneda.");
+  }
+  if (llega) {
+    if (!activa(x.destino_id)) throw new Error("Elige a qué caja llega.");
+    if (!(Number(x.valor_destino) > 0)) throw new Error("Escribe cuánto llega.");
+    if (!x.moneda_destino && !x.monitor_id) throw new Error("Elige la moneda.");
+  }
+  if (sale && llega && x.origen_id === x.destino_id && x.moneda_origen === x.moneda_destino) throw new Error("Sale y llega a la misma caja en la misma moneda.");
+  if (x.tipo === "gasto" && !x.nota?.trim()) throw new Error("Escribe en qué se gastó.");
+  const mia = miCaja();
+  if (s.yo.rol === "bodeguero" && (!mia || (x.tipo === "entrada" ? x.destino_id : x.origen_id) !== mia)) throw new Error("Solo puedes mover la plata de la caja de tu bodega.");
+  const fecha = x.fecha || hoy();
+  if (x.tipo === "entrada" && x.monitor_id) {
+    const mal = s.bodegas.find((b) => b.id === x.monitor_id && b.tipo === "monitor");
+    if (!mal) throw new Error("Elige el monitor.");
+    s.pagos.push({ id: Math.max(0, ...s.pagos.map((p) => p.id)) + 1, bodega_id: mal.id, fecha, valor: Number(x.valor_destino), moneda: monedaDe(mal).moneda, caja_id: x.destino_id, nota: x.nota?.trim() || undefined, creado_por: s.yo.nombre });
+    return saveDemo();
+  }
+  if (sale) {
+    const hay = saldo(x.origen_id!, x.moneda_origen!);
+    const cifra = (n: number) => n.toLocaleString("es-CO", { maximumFractionDigits: 2 });
+    if (Number(x.valor_origen) > hay + 1e-9) throw new Error(`No hay suficiente en ${caja(x.origen_id)?.nombre}: hay ${cifra(hay)} ${x.moneda_origen}, sale ${cifra(Number(x.valor_origen))} ${x.moneda_origen}.`);
+  }
+  s.dinero.push({
+    id: Math.max(0, ...s.dinero.map((d) => d.id)) + 1,
+    tipo: x.tipo,
+    fecha,
+    origen_id: sale ? x.origen_id : null,
+    valor_origen: sale ? Number(x.valor_origen) : null,
+    moneda_origen: sale ? x.moneda_origen : null,
+    destino_id: llega ? x.destino_id : null,
+    valor_destino: llega ? Number(x.valor_destino) : null,
+    moneda_destino: llega ? x.moneda_destino : null,
+    nota: x.nota?.trim() || null,
+    anulado: false,
+    creado_por: s.yo.nombre,
+  });
+  saveDemo();
+}
+
+/** Anula un registro de plata (solo admin): deja de contar, el registro queda. */
+export async function anularDinero(id: number) {
+  if (!DEMO) return void (await llamar("inv_dinero_anular", { p_id: id }));
+  const d = load().dinero.find((x) => x.id === id);
+  if (!d || d.anulado) throw new Error("Ese registro no existe o ya está anulado.");
+  if (d.destino_id && saldo(d.destino_id, d.moneda_destino!) < Number(d.valor_destino) - 1e-9) throw new Error(`No se puede anular: esa plata ya salió de ${caja(d.destino_id)?.nombre}. Anula primero lo que se hizo después.`);
+  d.anulado = true;
   saveDemo();
 }
 
@@ -842,6 +1009,7 @@ export async function anularPago(id: number) {
   if (!DEMO) return void (await llamar("inv_pago_anular", { p_id: id }));
   const p = load().pagos.find((x) => x.id === id);
   if (!p || p.anulado) throw new Error("Ese pago no existe o ya está anulado.");
+  if (p.caja_id && saldo(p.caja_id, p.moneda) < p.valor - 1e-9) throw new Error(`No se puede anular: esa plata ya salió de ${caja(p.caja_id)?.nombre}. Anula primero lo que se hizo después.`);
   p.anulado = true;
   saveDemo();
 }
@@ -915,7 +1083,23 @@ function seed(): State {
     ],
     movimientos: [],
     pagos: [],
+    // Cada bodega con su caja, y la cuenta de Don Octavio (RD)
+    cajas: [
+      ...["b1", "b2", "b3", "b4", "b5", "b6", "b7", "b8", "b9"].map((b) => ({ id: `k-${b}`, bodega_id: b, nombre: "", pais: "", activa: true })),
+      { id: "k1", bodega_id: null, nombre: "Cuenta Don Octavio", pais: "República Dominicana", activa: true },
+    ],
+    dinero: [],
   };
+  // Nombre y país de las cajas de bodega: los de su bodega
+  s.cajas.forEach((c) => {
+    const b = s.bodegas.find((x) => x.id === c.bodega_id);
+    if (b) Object.assign(c, { nombre: b.nombre, pais: b.pais });
+  });
+  const din = (d: Omit<Dinero, "id" | "anulado" | "creado_por">) => s.dinero.push({ id: s.dinero.length + 1, anulado: false, creado_por: "Leidy", ...d });
+  din({ tipo: "entrada", fecha: "2026-11-18", destino_id: "k-b7", valor_destino: 85000, moneda_destino: "DOP", nota: "Lo que había en caja" });
+  din({ tipo: "entrada", fecha: "2026-11-18", destino_id: "k-b7", valor_destino: 200, moneda_destino: "USD", nota: "Lo que había en caja" });
+  din({ tipo: "gasto", fecha: "2026-11-20", origen_id: "k-b7", valor_origen: 3500, moneda_origen: "DOP", nota: "Transporte mercancía" });
+  din({ tipo: "cambio", fecha: "2026-11-21", origen_id: "k-b7", valor_origen: 60000, moneda_origen: "DOP", destino_id: "k1", valor_destino: 1000, moneda_destino: "USD", nota: "Casa de cambio" });
   const it = (producto_id: string, cantidad: number, valor_unitario = 0) => ({ producto_id, cantidad, valor_unitario });
   const reg = (m: NuevoMovimiento & { por?: string }) => {
     s.yo.nombre = m.por ?? "German";
