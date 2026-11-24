@@ -48,7 +48,7 @@ import StatCard from "../components/ui/StatCard.astro";
         <span class="muted small">Bajo el mínimo, en bodegas</span>
       </div>
       <div class="table-wrap">
-        <table class="table">
+        <table class="table tabla-agotarse">
           <thead>
             <tr><th>Producto</th><th>Bodega</th><th class="num">Quedan</th><th class="num">Mínimo</th></tr>
           </thead>
@@ -108,6 +108,23 @@ import StatCard from "../components/ui/StatCard.astro";
     .tabla-paises th {
       white-space: normal;
     }
+
+    /* Por agotarse: la bodega va debajo del producto para que quepa todo */
+    .tabla-agotarse :global(:is(th, td):nth-child(2)) {
+      display: none;
+    }
+
+    .tabla-agotarse :global(.bodega-cel) {
+      display: block;
+      font-weight: 400;
+      font-size: var(--text-xs);
+    }
+  }
+
+  @media (min-width: 600px) {
+    .tabla-agotarse :global(.bodega-cel) {
+      display: none;
+    }
   }
 
   [data-paises] :global(.fila-total td) {
@@ -116,9 +133,15 @@ import StatCard from "../components/ui/StatCard.astro";
   }
 
   .hbars :global(.hbar) {
-    grid-template-columns: minmax(0, 170px) minmax(40px, 1fr) auto;
+    grid-template-columns: minmax(0, 200px) minmax(40px, 1fr) auto;
     color: inherit;
     border-radius: var(--radius-sm);
+  }
+
+  /* Nombre y ciudad completos: bajan de línea en vez de cortarse */
+  .hbars :global(.hbar > :first-child) {
+    white-space: normal;
+    overflow-wrap: anywhere;
   }
 
   .hbars :global(.hbar .sub) {
@@ -216,7 +239,7 @@ import StatCard from "../components/ui/StatCard.astro";
   document.querySelector("[data-low]")!.innerHTML = low
     .map(
       (x) => `<tr data-tone="${x.cantidad < x.p.stock_minimo / 2 ? "danger" : "warning"}">
-        <td class="strong">${esc(x.p.nombre)}</td><td>${esc(x.b.nombre)}</td>
+        <td class="strong">${esc(x.p.nombre)}<span class="bodega-cel muted">${esc(x.b.nombre)}</span></td><td>${esc(x.b.nombre)}</td>
         <td class="num tnum">${num(x.cantidad)}</td><td class="num tnum muted">${num(x.p.stock_minimo)}</td>
       </tr>`,
     )
