@@ -1,6 +1,6 @@
 ---
 // Países y monedas (admin, German 2026-11-09): cada país vende en su moneda y con sus precios.
-// La tasa (cuántos pesos vale 1 unidad) sirve para sumar todo en pesos en el resumen y los reportes.
+// Cada moneda se suma aparte: no hay valor fijo entre monedas (el cambio real se anota en Caja → Casa de cambio).
 import AppLayout from "../layouts/AppLayout.astro";
 import PageHeader from "../components/ui/PageHeader.astro";
 import Select from "../components/ui/Select.astro";
@@ -21,7 +21,6 @@ import { MONEDAS } from "../lib/store";
           <tr>
             <th data-sort="text" data-card-title>País</th>
             <th data-sort="text">Moneda</th>
-            <th class="num" data-sort="num" title="Cuántos pesos vale 1 unidad de su moneda">Vale en pesos</th>
             <th class="num" data-sort="num">Bodegas y maletas</th>
             <th class="num" data-sort="num">Productos con precio</th>
             <th></th>
@@ -47,11 +46,6 @@ import { MONEDAS } from "../lib/store";
         <span class="label">Moneda</span>
         <Select name="moneda" searchable placeholder="Elegir moneda" options={MONEDAS} />
       </div>
-      <div class="field span-2" data-tasa>
-        <label for="pa-tasa" data-tasa-label>¿Cuántos pesos vale 1?</label>
-        <input id="pa-tasa" name="tasa" class="input tnum" type="text" inputmode="decimal" data-money placeholder="Ej. 1.100" />
-        <span class="hint">Para sumar todo en pesos. Cámbiala cuando cambie el precio de la moneda: las ventas viejas no cambian.</span>
-      </div>
     </form>
     <button slot="footer" type="button" class="btn btn-ghost" data-modal-close>Cancelar</button>
     <button slot="footer" type="button" class="btn btn-primary" data-save>Guardar</button>
@@ -61,8 +55,8 @@ import { MONEDAS } from "../lib/store";
 <script>
   import "../lib/ui";
   import { initTableFilter } from "../lib/ui/table-filter";
-  import { paises, pais, todasBodegas, productos, guardarPais, MONEDA } from "../lib/store";
-  import { money, num, esc, menu, intentar, parseNum, dsSelect, flashRow } from "../lib/view";
+  import { paises, pais, todasBodegas, productos, guardarPais } from "../lib/store";
+  import { num, esc, menu, intentar, dsSelect, flashRow } from "../lib/view";
 
   const scope = document.querySelector<HTMLElement>("[data-table]")!;
   const body = scope.querySelector<HTMLElement>("[data-body]")!;
@@ -77,7 +71,6 @@ import { MONEDAS } from "../lib/store";
         return `<tr data-row data-id="${esc(p.nombre)}">
           <td class="strong">${esc(p.nombre)}</td>
           <td>${esc(p.moneda)}</td>
-          <td class="num tnum" data-sort-value="${p.tasa}">${p.moneda === MONEDA ? '<span class="muted">—</span>' : money(p.tasa)}</td>
           <td class="num tnum">${num(lugares)}</td>
           <td class="num tnum">${num(conPrecio)}</td>
           <td class="cell-actions">${menu([{ value: "editar", label: "Editar", icon: "bi-pencil" }])}</td>
@@ -92,14 +85,7 @@ import { MONEDAS } from "../lib/store";
   const modal = document.getElementById("pais-modal")!;
   const form = modal.querySelector<HTMLFormElement>("[data-form]")!;
   const nombre = form.querySelector<HTMLInputElement>("[name=nombre]")!;
-  const tasa = form.querySelector<HTMLInputElement>("[name=tasa]")!;
   const moneda = dsSelect(form, "ds-select[name=moneda]");
-  const tasaField = form.querySelector<HTMLElement>("[data-tasa]")!;
-  function sync() {
-    tasaField.hidden = !moneda.value || moneda.value === MONEDA;
-    form.querySelector("[data-tasa-label]")!.textContent = `¿Cuántos pesos vale 1 ${moneda.value}?`;
-  }
-  moneda.addEventListener("change", sync);
 
   let editando = "";
   function open(id = "") {
@@ -109,8 +95,6 @@ import { MONEDAS } from "../lib/store";
     modal.querySelector("[data-modal-title]")!.textContent = p ? `Editar ${p.nombre}` : "Nuevo país";
     nombre.value = p?.nombre ?? "";
     moneda.value = p?.moneda ?? "";
-    tasa.value = p && p.moneda !== MONEDA ? num(p.tasa) : "";
-    sync();
     window.ui.openModal("pais-modal");
     nombre.focus();
   }
@@ -119,7 +103,7 @@ import { MONEDAS } from "../lib/store";
     let id = "";
     const ok = await intentar(
       form,
-      async () => (id = await guardarPais({ antes: editando || undefined, nombre: nombre.value, moneda: moneda.value, tasa: parseNum(tasa.value) })),
+      async () => (id = await guardarPais({ antes: editando || undefined, nombre: nombre.value, moneda: moneda.value })),
       editando ? "País actualizado" : "País creado",
     );
     if (!ok) return;
@@ -137,9 +121,5 @@ import { MONEDAS } from "../lib/store";
 <style>
   [data-body] :global(tr[data-id]) {
     cursor: pointer;
-  }
-
-  [data-tasa][hidden] {
-    display: none;
   }
 </style>

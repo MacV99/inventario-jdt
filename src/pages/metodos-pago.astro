@@ -59,8 +59,8 @@ import CrearRapido from "../components/app/CrearRapido.astro";
 <script>
   import "../lib/ui";
   import { initTableFilter } from "../lib/ui/table-filter";
-  import { metodosPago, metodoPago, ventas, totalMov, guardarMetodoPago, paises, paisActual } from "../lib/store";
-  import { money, esc, menu, intentar, flashRow, dsSelect } from "../lib/view";
+  import { metodosPago, metodoPago, ventas, totalLocal, porMoneda, guardarMetodoPago, paises, pais as paisDe, paisActual } from "../lib/store";
+  import { montos, esc, menu, intentar, flashRow, dsSelect } from "../lib/view";
   import { conCrearPais } from "../lib/crear-rapido";
 
   const scope = document.querySelector<HTMLElement>("[data-table]")!;
@@ -73,12 +73,12 @@ import CrearRapido from "../components/app/CrearRapido.astro";
     body.innerHTML = ms
       .map((m) => {
         const mias = vs.filter((v) => v.metodo_pago_id === m.id);
-        const total = mias.reduce((a, v) => a + totalMov(v), 0);
+        const total = porMoneda(mias.map((v) => [v.moneda, totalLocal(v)] as const));
         return `<tr data-row data-id="${m.id}">
           <td class="strong">${esc(m.nombre)}</td>
           <td>${m.pais ? esc(m.pais) : '<span class="muted">Todos</span>'}</td>
           <td class="num tnum">${mias.length}</td>
-          <td class="num tnum" data-sort-value="${total}">${money(total)}</td>
+          <td class="num tnum" data-sort-value="${mias.length}">${montos(total, paisDe(m.pais)?.moneda ?? "COP", "<br>")}</td>
           <td>${m.activo ? '<span class="dot success"></span> Activo' : '<span class="badge">Desactivado</span>'}</td>
           <td class="cell-actions">${menu([
             { value: "editar", label: "Editar", icon: "bi-pencil" },

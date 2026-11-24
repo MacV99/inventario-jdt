@@ -4,8 +4,8 @@
 // El selector necesita `creatable` (y `searchable`) en su etiqueta; aquí solo se maneja lo que pasa al crear.
 // `refrescar` vuelve a llenar las opciones del selector en la página (para que aparezca lo nuevo).
 
-import { guardarPais, guardarBodega, guardarProducto, guardarMetodoPago, siguienteCodigo, paises, todasBodegas, paisActual, llave, MONEDA } from "./store";
-import { dsSelect, intentar, parseNum, uniqueOptions, sinNuevo, type DsSelectEl } from "./view";
+import { guardarPais, guardarBodega, guardarProducto, guardarMetodoPago, siguienteCodigo, paises, todasBodegas, paisActual, llave } from "./store";
+import { dsSelect, intentar, uniqueOptions, sinNuevo, type DsSelectEl } from "./view";
 
 type Cambio = CustomEvent<{ value: string; label: string; created: boolean } | undefined>;
 
@@ -58,33 +58,22 @@ function ventana(id: string, preparar: (form: HTMLFormElement) => void, crear: (
 const opcionesPais = () => paises().map((x) => ({ value: x.nombre, label: x.nombre, hint: x.moneda }));
 
 // ── País ─────────────────────────────────────────────────────────────
-let paisListo = false;
 function nuevoPais(nombre: string) {
   return ventana(
     "rapido-pais",
     (form) => {
-      const moneda = dsSelect(form, "ds-select[name=moneda]");
-      const sync = () => {
-        form.querySelector<HTMLElement>("[data-tasa]")!.hidden = !moneda.value || moneda.value === MONEDA;
-        form.querySelector("[data-tasa-label]")!.textContent = `¿Cuántos pesos vale 1 ${moneda.value}?`;
-      };
-      if (!paisListo) moneda.addEventListener("change", sync);
-      paisListo = true;
       form.querySelector<HTMLInputElement>("[name=nombre]")!.value = nombre;
-      form.querySelector<HTMLInputElement>("[name=tasa]")!.value = "";
-      moneda.value = "";
-      sync();
+      dsSelect(form, "ds-select[name=moneda]").value = "";
     },
     (form) =>
       guardarPais({
         nombre: form.querySelector<HTMLInputElement>("[name=nombre]")!.value,
         moneda: dsSelect(form, "ds-select[name=moneda]").value,
-        tasa: parseNum(form.querySelector<HTMLInputElement>("[name=tasa]")!.value),
       }),
   );
 }
 
-/** Selector de país: «Crear país» abre la ventanita (moneda y tasa). */
+/** Selector de país: «Crear país» abre la ventanita (nombre y moneda). */
 export const conCrearPais = (sel: DsSelectEl, refrescar: () => void) => alCrear(sel, nuevoPais, refrescar);
 
 // ── Bodega ───────────────────────────────────────────────────────────

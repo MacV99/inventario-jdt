@@ -18,11 +18,6 @@ import { MONEDAS } from "../../lib/store";
       <span class="label">Moneda</span>
       <Select name="moneda" searchable placeholder="Elegir moneda" options={MONEDAS} />
     </div>
-    <div class="field span-2" data-tasa>
-      <label for="rp-tasa" data-tasa-label>¿Cuántos pesos vale 1?</label>
-      <input id="rp-tasa" name="tasa" class="input tnum" type="text" inputmode="decimal" data-money placeholder="Ej. 1.100" />
-      <span class="hint">Para sumar todo en pesos. Se puede cambiar después en Países y monedas.</span>
-    </div>
   </form>
   <button slot="footer" type="button" class="btn btn-ghost" data-modal-close>Cancelar</button>
   <button slot="footer" type="button" class="btn btn-primary" data-save>Crear país</button>
@@ -47,9 +42,3 @@ import { MONEDAS } from "../../lib/store";
   <button slot="footer" type="button" class="btn btn-ghost" data-modal-close>Cancelar</button>
   <button slot="footer" type="button" class="btn btn-primary" data-save>Crear bodega</button>
 </Modal>
-
-<style>
-  [data-tasa][hidden] {
-    display: none;
-  }
-</style>

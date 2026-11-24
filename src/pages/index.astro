@@ -157,14 +157,14 @@ import StatCard from "../components/ui/StatCard.astro";
 
 <script>
   import { setKpi } from "../lib/ui/kpi";
-  import { bodegas, productos, stockFilas, ventas, totalMov, cuadre, movimientos, unidadesMov, rutaMov, paises, paisActual, elegirPais, TIPO_MOV } from "../lib/store";
-  import { money, num, day, esc, monthLabel, today } from "../lib/view";
+  import { bodegas, productos, stockFilas, ventas, totalLocal, porMoneda, cuadre, movimientos, unidadesMov, rutaMov, paises, pais, paisActual, elegirPais, TIPO_MOV } from "../lib/store";
+  import { money, montos, num, day, esc, monthLabel, today } from "../lib/view";
 
   const mes = today().slice(0, 7);
   const elegido = paisActual();
   document.querySelector("[data-page-subtitle]")!.textContent = `${elegido || "Global"} · ${monthLabel(mes)}`;
 
-  // Global: una fila por país (productos, bodegas y lo vendido este mes en pesos)
+  // Global: una fila por país (productos, bodegas y lo vendido este mes en su moneda)
   if (!elegido) {
     document.querySelector<HTMLElement>("[data-global]")!.hidden = false;
     document.querySelectorAll<HTMLElement>("[data-local]").forEach((el) => (el.hidden = true));
@@ -176,20 +176,23 @@ import StatCard from "../components/ui/StatCard.astro";
         nombre: p.nombre,
         unidades: fs.filter((f) => ids.has(f.bodega_id)).reduce((a, f) => a + f.cantidad, 0),
         bodegas: bodegas().filter((b) => b.pais === p.nombre && b.tipo === "bodega" && b.activa).length,
-        vendido: vs.filter((v) => ids.has(v.origen_id ?? "")).reduce((a, v) => a + totalMov(v), 0),
+        moneda: p.moneda,
+        vendido: porMoneda(vs.filter((v) => ids.has(v.origen_id ?? "")).map((v) => [v.moneda, totalLocal(v)] as const)),
       };
     });
-    const suma = (k: "unidades" | "bodegas" | "vendido") => filasPais.reduce((a, x) => a + x[k], 0);
+    const suma = (k: "unidades" | "bodegas") => filasPais.reduce((a, x) => a + x[k], 0);
+    // El total no mezcla monedas: cada una va aparte
+    const vendidoTotal = porMoneda(filasPais.flatMap((x) => [...x.vendido]));
     document.querySelector("[data-paises]")!.innerHTML = filasPais
       .map(
         (x) => `<tr>
           <td><a href="/" class="strong" data-ir-pais="${esc(x.nombre)}">${esc(x.nombre)}</a></td>
           <td class="num tnum strong">${num(x.unidades)}</td>
           <td class="num tnum">${num(x.bodegas)}</td>
-          <td class="num tnum">${money(x.vendido)}</td>
+          <td class="num tnum">${montos(x.vendido, x.moneda, "<br>")}</td>
         </tr>`,
       )
-      .join("") + `<tr class="fila-total"><td class="strong">Total</td><td class="num tnum strong">${num(suma("unidades"))}</td><td class="num tnum">${num(suma("bodegas"))}</td><td class="num tnum">${money(suma("vendido"))}</td></tr>`;
+      .join("") + `<tr class="fila-total"><td class="strong">Total</td><td class="num tnum strong">${num(suma("unidades"))}</td><td class="num tnum">${num(suma("bodegas"))}</td><td class="num tnum">${montos(vendidoTotal, "COP", "<br>")}</td></tr>`;
     document.querySelector("[data-paises]")!.addEventListener("click", (e) => {
       const b = (e.target as HTMLElement).closest<HTMLElement>("[data-ir-pais]");
       if (!b) return;
@@ -202,11 +205,12 @@ import StatCard from "../components/ui/StatCard.astro";
   const filas = stockFilas();
   const kpis = document.querySelector<HTMLElement>("[data-kpis]")!;
   const delMes = ventas().filter((v) => v.fecha.startsWith(mes));
-  const vendido = delMes.reduce((a, v) => a + totalMov(v), 0);
-  const debe = cuadre().reduce((a, c) => a + Math.max(0, c.debeBase), 0);
+  const monedaPais = pais(elegido)?.moneda ?? "COP";
+  const vendido = porMoneda(delMes.map((v) => [v.moneda, totalLocal(v)] as const));
+  const debe = porMoneda(cuadre().map((c) => [c.moneda, Math.max(0, c.debe)] as const));
   setKpi(kpis, "unidades", num(filas.reduce((a, f) => a + f.cantidad, 0)));
-  setKpi(kpis, "vendido", money(vendido), `${delMes.length} ${delMes.length === 1 ? "venta" : "ventas"}`);
-  setKpi(kpis, "debe", money(debe), "de monitores");
+  setKpi(kpis, "vendido", montos(vendido, monedaPais, "\n"), `${delMes.length} ${delMes.length === 1 ? "venta" : "ventas"}`);
+  setKpi(kpis, "debe", montos(debe, monedaPais, "\n"), "de monitores");
 
   // Productos por bodega (bodegas primero, luego maletas)
   const porBodega = bodegas()
@@ -258,7 +262,7 @@ import StatCard from "../components/ui/StatCard.astro";
         <td class="nowrap"><i class="bi ${t.icon} muted" aria-hidden="true"></i> ${t.label}${m.anulado ? ' <span class="badge danger">Anulado</span>' : ""}</td>
         <td>${esc(de)} <span class="muted">→</span> ${esc(a)}</td>
         <td class="num tnum">${num(unidadesMov(m))}</td>
-        <td class="num tnum">${m.tipo === "venta" ? money(totalMov(m)) : '<span class="muted">—</span>'}</td>
+        <td class="num tnum">${m.tipo === "venta" ? money(totalLocal(m), m.moneda) : '<span class="muted">—</span>'}</td>
       </tr>`;
     })
     .join("");

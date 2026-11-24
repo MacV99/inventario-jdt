@@ -14,8 +14,8 @@ import FormError from "../components/ui/FormError.astro";
   <section class="card kpis" data-kpis>
     <StatCard label="Monitores" value="—" dataKey="monitores" />
     <StatCard label="En maletas" value="—" dataKey="unidades" hint="Productos que tienen los monitores" />
-    <StatCard label="Vendido" value="—" dataKey="vendido" hint="Todo en pesos" />
-    <StatCard label="Por recibir" value="—" dataKey="debe" hint="Todo en pesos" />
+    <StatCard label="Vendido" value="—" dataKey="vendido" hint="Cada moneda aparte" />
+    <StatCard label="Por recibir" value="—" dataKey="debe" hint="Cada moneda aparte" />
   </section>
 
   <section class="card card-list" data-table>
@@ -103,8 +103,8 @@ import FormError from "../components/ui/FormError.astro";
   import "../lib/ui";
   import { initTableFilter } from "../lib/ui/table-filter";
   import { setKpi } from "../lib/ui/kpi";
-  import { cuadre, stockFilas, bodega, producto, ventas, pagos, totalLocal, registrarPago, anularPago, metodosDe, monedaDe, precioEn, todasCajas } from "../lib/store";
-  import { money, num, day, esc, searchText, menu, avatar, intentar, parseNum, flashRow, dsSelect } from "../lib/view";
+  import { cuadre, porMoneda, pais, paisActual, stockFilas, bodega, producto, ventas, pagos, totalLocal, registrarPago, anularPago, metodosDe, monedaDe, precioEn, todasCajas } from "../lib/store";
+  import { money, montos, num, day, esc, searchText, menu, avatar, intentar, parseNum, flashRow, dsSelect } from "../lib/view";
   import { conCrearMetodo } from "../lib/crear-rapido";
 
   const scope = document.querySelector<HTMLElement>("[data-table]")!;
@@ -121,9 +121,9 @@ import FormError from "../components/ui/FormError.astro";
         return `<tr data-row data-id="${f.bodega.id}" data-text="${esc(searchText(n, f.bodega.ciudad, f.bodega.pais))}">
           <td><span class="who">${avatar(n)}<span><span class="strong">${esc(n)}</span><p class="sub">${esc([f.bodega.ciudad, f.bodega.pais].filter(Boolean).join(" · ") || "Sin ciudad")}</p></span></span></td>
           <td class="num tnum" data-sort-value="${f.unidades}">${num(f.unidades)} und</td>
-          <td class="num tnum" data-sort-value="${f.vendidoBase}">${money(f.vendido, f.moneda)}<p class="sub">${num(f.vendidas)} und</p></td>
+          <td class="num tnum" data-sort-value="${f.vendido}">${money(f.vendido, f.moneda)}<p class="sub">${num(f.vendidas)} und</p></td>
           <td class="num tnum" data-sort-value="${f.entregado}">${money(f.entregado, f.moneda)}</td>
-          <td class="num tnum strong nowrap" data-sort-value="${f.debeBase}">${f.debe > 0 ? '<span class="dot warning" title="Tiene dinero por entregar"></span> ' : ""}${money(f.debe, f.moneda)}</td>
+          <td class="num tnum strong nowrap" data-sort-value="${f.debe}">${f.debe > 0 ? '<span class="dot warning" title="Tiene dinero por entregar"></span> ' : ""}${money(f.debe, f.moneda)}</td>
           <td class="cell-actions">${menu([
             { value: "maleta", label: "Ver maleta y ventas", icon: "bi-briefcase" },
             { value: "entregar", label: "Entregarle mercancía", icon: "bi-box-arrow-right" },
@@ -134,12 +134,12 @@ import FormError from "../components/ui/FormError.astro";
         </tr>`;
       })
       .join("");
-    // Los totales de arriba van en pesos (cada monitor pasado con la tasa de su país)
-    const sum = (k: "unidades" | "vendidoBase" | "debeBase") => filas.reduce((a, f) => a + f[k], 0);
+    // Los totales de arriba no mezclan monedas: cada una va aparte
+    const vacia = pais(paisActual())?.moneda ?? "COP";
     setKpi(kpis, "monitores", filas.length);
-    setKpi(kpis, "unidades", num(sum("unidades")));
-    setKpi(kpis, "vendido", money(sum("vendidoBase")));
-    setKpi(kpis, "debe", money(filas.reduce((a, f) => a + Math.max(0, f.debeBase), 0)));
+    setKpi(kpis, "unidades", num(filas.reduce((a, f) => a + f.unidades, 0)));
+    setKpi(kpis, "vendido", montos(porMoneda(filas.map((f) => [f.moneda, f.vendido] as const)), vacia, "\n"));
+    setKpi(kpis, "debe", montos(porMoneda(filas.map((f) => [f.moneda, Math.max(0, f.debe)] as const)), vacia, "\n"));
     table.rescan();
   }
   render();

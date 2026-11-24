@@ -15,6 +15,11 @@ const moneyFmt = (moneda: string) => {
   return f;
 };
 export const money = (n: number, moneda = "COP") => moneyFmt(moneda).format(moneda === "COP" ? Math.round(n) : Math.round(n * 100) / 100);
+/** Plata de varias monedas, cada una aparte ("$ 60.000 · DOP 1.500"). Sin nada: 0 en `vacia`. */
+export const montos = (m: Map<string, number>, vacia = "COP", sep = " · ") => {
+  const xs = [...m].filter(([, v]) => Math.abs(v) > 0.004).sort(([a], [b]) => (a === "COP" ? -1 : b === "COP" ? 1 : a.localeCompare(b)));
+  return xs.length ? xs.map(([mon, v]) => money(v, mon)).join(sep) : money(0, vacia);
+};
 export const num = (n: number) => numFmt.format(n);
 export const day = (iso: string) => dayFmt.format(new Date(`${iso}T12:00:00Z`)).replace(".", "").replace(" de ", " ");
 export const dayYear = (iso: string) => dayYearFmt.format(new Date(`${iso}T12:00:00Z`)).replace(".", "").replaceAll(" de ", " ");

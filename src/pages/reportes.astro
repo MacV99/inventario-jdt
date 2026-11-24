@@ -21,7 +21,7 @@ const grupos = [
   </PageHeader>
 
   <section class="card kpis" data-kpis>
-    <StatCard label="Vendido" value="—" dataKey="total" hint="Todo en pesos" />
+    <StatCard label="Vendido" value="—" dataKey="total" hint="Cada moneda aparte" />
     <StatCard label="Unidades" value="—" dataKey="cantidad" />
   </section>
 
@@ -102,15 +102,14 @@ const grupos = [
   import "../lib/ui";
   import { initTableFilter } from "../lib/ui/table-filter";
   import { setKpi } from "../lib/ui/kpi";
-  import { ventas, bodega, producto, metodoPago } from "../lib/store";
-  import { money, num, day, esc, dsSelect, uniqueOptions, monthLabel, descargarCsv } from "../lib/view";
+  import { ventas, bodega, producto, metodoPago, porMoneda } from "../lib/store";
+  import { money, montos, num, day, esc, dsSelect, uniqueOptions, monthLabel, descargarCsv } from "../lib/view";
 
   // Una fila por producto vendido (v_ventas)
   const lineas = ventas().flatMap((v) => {
     const b = bodega(v.origen_id)!;
     return v.items.map((i) => {
-      const local = i.cantidad * i.valor_unitario; // en la moneda del país
-      const total = local * v.tasa; // en pesos
+      const total = i.cantidad * i.valor_unitario; // en la moneda del país
       return {
         fecha: v.fecha,
         mes: v.fecha.slice(0, 7),
@@ -121,7 +120,6 @@ const grupos = [
         producto: producto(i.producto_id)?.nombre ?? "—",
         cantidad: i.cantidad,
         moneda: v.moneda,
-        local,
         total,
       };
     });
@@ -148,7 +146,7 @@ const grupos = [
         <td>${esc(l.monitor)}<p class="sub">${esc(l.pais)}</p></td>
         <td>${esc(l.curso)}<p class="sub">${esc(l.pago)}</p></td>
         <td class="num tnum">${num(l.cantidad)}</td>
-        <td class="num tnum" data-sort-value="${l.total}">${money(l.total)}${l.moneda !== "COP" ? `<p class="sub">${money(l.local, l.moneda)}</p>` : ""}</td>
+        <td class="num tnum" data-sort-value="${l.total}">${money(l.total, l.moneda)}</td>
       </tr>`,
     )
     .join("");
@@ -157,15 +155,16 @@ const grupos = [
   let groupBy = "";
   let visibles: Linea[] = lineas;
   const grupos = (ls: Linea[]) => {
-    const m = new Map<string, { cantidad: number; total: number }>();
+    // Cada moneda se suma aparte; se ordena por unidades (las monedas no se comparan entre sí)
+    const m = new Map<string, { cantidad: number; total: Map<string, number> }>();
     for (const l of ls) {
       const k = String(l[groupBy as keyof Linea]);
-      const g = m.get(k) ?? { cantidad: 0, total: 0 };
+      const g = m.get(k) ?? { cantidad: 0, total: new Map<string, number>() };
       g.cantidad += l.cantidad;
-      g.total += l.total;
+      g.total.set(l.moneda, (g.total.get(l.moneda) ?? 0) + l.total);
       m.set(k, g);
     }
-    return [...m].sort((a, b) => b[1].total - a[1].total);
+    return [...m].sort((a, b) => b[1].cantidad - a[1].cantidad);
   };
   function pintarGrupos() {
     const det = scope.querySelector<HTMLElement>("[data-detalle]")!;
@@ -176,7 +175,7 @@ const grupos = [
     scope.querySelector("[data-group-title]")!.textContent = scope.querySelector(`[data-group-by="${groupBy}"]`)!.textContent!;
     scope.querySelector("[data-group-body]")!.innerHTML = grupos(visibles)
       .map(
-        ([k, g]) => `<tr><td class="strong">${esc(k)}</td><td class="num tnum">${num(g.cantidad)}</td><td class="num tnum strong">${money(g.total)}</td></tr>`,
+        ([k, g]) => `<tr><td class="strong">${esc(k)}</td><td class="num tnum">${num(g.cantidad)}</td><td class="num tnum strong">${montos(g.total, "COP", "<br>")}</td></tr>`,
       )
       .join("");
   }
@@ -191,9 +190,8 @@ const grupos = [
   const kpis = document.querySelector<HTMLElement>("[data-kpis]")!;
   const table = initTableFilter(scope, ({ visible }) => {
     visibles = visible.map((r) => lineas[Number(r.dataset.i)]!);
-    const sum = (k: "total" | "cantidad") => visibles.reduce((a, l) => a + l[k], 0);
-    setKpi(kpis, "total", money(sum("total")));
-    setKpi(kpis, "cantidad", num(sum("cantidad")));
+    setKpi(kpis, "total", montos(porMoneda(visibles.map((l) => [l.moneda, l.total] as const)), "COP", "\n"));
+    setKpi(kpis, "cantidad", num(visibles.reduce((a, l) => a + l.cantidad, 0)));
     pintarGrupos();
   });
   table.rescan();
@@ -202,12 +200,13 @@ const grupos = [
   document.querySelector("[data-excel]")!.addEventListener("click", () => {
     const rows: (string | number)[][] = groupBy
       ? [
-          [scope.querySelector(`[data-group-by="${groupBy}"]`)!.textContent!, "Unidades", "Vendido (pesos)"],
-          ...grupos(visibles).map(([k, g]) => [k, g.cantidad, Math.round(g.total)]),
+          [scope.querySelector(`[data-group-by="${groupBy}"]`)!.textContent!, "Unidades", "Moneda", "Vendido"],
+          // Una fila por cada moneda del grupo
+          ...grupos(visibles).flatMap(([k, g]) => [...g.total].map(([mon, v], i) => [k, i ? "" : g.cantidad, mon, v])),
         ]
       : [
-          ["Fecha", "Producto", "Vendió", "País", "Curso", "Pago", "Cantidad", "Moneda", "Cobrado (en su moneda)", "Vendido (pesos)"],
-          ...visibles.map((l) => [l.fecha, l.producto, l.monitor, l.pais, l.curso, l.pago, l.cantidad, l.moneda, l.local, Math.round(l.total)]),
+          ["Fecha", "Producto", "Vendió", "País", "Curso", "Pago", "Cantidad", "Moneda", "Vendido"],
+          ...visibles.map((l) => [l.fecha, l.producto, l.monitor, l.pais, l.curso, l.pago, l.cantidad, l.moneda, l.total]),
         ];
     descargarCsv(`ventas-jdt${groupBy ? `-por-${groupBy}` : ""}.csv`, rows);
     window.ui.toast("Archivo descargado", { tone: "success" });

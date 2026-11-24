@@ -19,8 +19,8 @@ export interface Perfil { id: string; nombre: string; usuario: string; rol: Rol;
 export interface Bodega { id: string; nombre: string; ciudad: string; pais: string; tipo: TipoBodega; monitor_id?: string | null; activa: boolean }
 /** precios: país → precio de venta en la moneda de ese país (sin precio = no está). */
 export interface Producto { id: string; codigo: string; nombre: string; unidad: string; precios: Record<string, number>; stock_minimo: number; activo: boolean }
-/** Cada país vende en su moneda. tasa = cuántos pesos vale 1 unidad (para sumar todo en pesos). */
-export interface Pais { nombre: string; moneda: string; tasa: number }
+/** Cada país vende en su moneda. Cada moneda se suma aparte: no hay valor fijo entre monedas. */
+export interface Pais { nombre: string; moneda: string }
 export interface Proveedor { id: string; nombre: string; contacto: string }
 /** pais: de qué país es (vacío = sirve en todos, p. ej. Efectivo). */
 export interface MetodoPago { id: number; nombre: string; pais?: string | null; activo: boolean }
@@ -35,7 +35,8 @@ export interface Movimiento {
   metodo_pago_id?: number | null;
   curso?: string | null;
   moneda: string;
-  tasa: number;
+  /** Viene de la base (movimientos viejos); ya no se usa para nada. */
+  tasa?: number;
   nota?: string | null;
   anulado: boolean;
   creado_por: string;
@@ -320,11 +321,14 @@ export const metodosPago = () => load().metodos_pago.filter((m) => !paisActual()
 export const metodosDe = (pais?: string | null) => load().metodos_pago.filter((m) => m.activo && (!m.pais || m.pais === pais));
 export const paises = () => load().paises;
 export const pais = (nombre?: string | null) => load().paises.find((p) => p.nombre === nombre);
-/** Moneda y tasa de un lugar (las de su país). Sin país conocido: pesos. */
-export const monedaDe = (b?: { pais: string } | null) => {
-  const p = pais(b?.pais);
-  return { moneda: p?.moneda ?? MONEDA, tasa: p?.tasa ?? 1 };
-};
+/** Moneda de un lugar (la de su país). Sin país conocido: pesos. */
+export const monedaDe = (b?: { pais: string } | null) => ({ moneda: pais(b?.pais)?.moneda ?? MONEDA });
+/** Suma plata de varias monedas, cada una aparte: moneda → total. */
+export function porMoneda(pares: Iterable<readonly [string, number]>) {
+  const m = new Map<string, number>();
+  for (const [mon, v] of pares) m.set(mon, (m.get(mon) ?? 0) + v);
+  return m;
+}
 /** Precio de venta de un producto en un país (0 = sin precio ahí). */
 export const precioEn = (productoId: string, paisNombre?: string | null) => (paisNombre && producto(productoId)?.precios[paisNombre]) || 0;
 /** Del más nuevo al más viejo (se agregan en orden, así que basta invertir). */
@@ -461,7 +465,7 @@ export function costoPromedio(state = load()) {
         const qty = q.get(i.producto_id) ?? 0;
         const avg = c.get(i.producto_id) ?? 0;
         if (mov.tipo === "compra") {
-          const unit = i.valor_unitario * mov.tasa;
+          const unit = i.valor_unitario;
           c.set(i.producto_id, qty + i.cantidad > 0 ? (qty * avg + i.cantidad * unit) / (qty + i.cantidad) : unit);
           q.set(i.producto_id, qty + i.cantidad);
         } else if (mov.tipo === "ajuste_entrada") q.set(i.producto_id, qty + i.cantidad);
@@ -489,7 +493,7 @@ export function kardex(productoId: string, bodegaId = "") {
     const q = it.reduce((a, i) => a + i.cantidad, 0);
     if (!q) continue;
     if (mov.tipo === "compra") {
-      const valor = it.reduce((a, i) => a + i.cantidad * i.valor_unitario * mov.tasa, 0);
+      const valor = it.reduce((a, i) => a + i.cantidad * i.valor_unitario, 0);
       avg = total + q > 0 ? (total * avg + valor) / (total + q) : avg;
     }
     const entraEmpresa = mov.tipo === "compra" || mov.tipo === "ajuste_entrada";
@@ -521,21 +525,14 @@ export function rutaMov(m: Movimiento) {
   return { de, a };
 }
 
-/** Valor del movimiento: compras y ventas a lo pagado/cobrado; lo demás al costo. */
-export const totalMov = (m: Movimiento) =>
-  m.items.reduce((a, i) => a + i.cantidad * (m.tipo === "venta" || m.tipo === "compra" ? i.valor_unitario * m.tasa : i.costo_unitario), 0);
 export const unidadesMov = (m: Movimiento) => m.items.reduce((a, i) => a + i.cantidad, 0);
-/** Valor cobrado o pagado en la moneda del movimiento (ventas y compras). */
+/** Valor cobrado o pagado, en la moneda del movimiento (ventas y compras). */
 export const totalLocal = (m: Movimiento) => m.items.reduce((a, i) => a + i.cantidad * i.valor_unitario, 0);
-export const gananciaMov = (m: Movimiento) => m.items.reduce((a, i) => a + i.cantidad * (i.valor_unitario * m.tasa - i.costo_unitario), 0);
 export const ventas = () => movimientos().filter((m) => m.tipo === "venta" && !m.anulado);
-
-/** Pesos que vale 1 unidad de una moneda (la tasa del primer país que la usa). */
-export const tasaDe = (moneda: string) => (moneda === MONEDA ? 1 : load().paises.find((x) => x.moneda === moneda)?.tasa ?? 0);
 
 /**
  * Cuadre por monitor: lo que tiene, lo vendido y el dinero por entregar, en la moneda de su país
- * (vendido, entregado, debe). Para sumar monitores de varios países: vendidoBase y debeBase en pesos.
+ * (vendido, entregado, debe). Cada moneda va aparte: lo que esté en otra moneda no se cuenta aquí.
  */
 export function cuadre() {
   const filas = stockFilas();
@@ -543,14 +540,13 @@ export function cuadre() {
   return bodegas()
     .filter((b) => b.tipo === "monitor")
     .map((b) => {
-      const { moneda, tasa } = monedaDe(b);
+      const { moneda } = monedaDe(b);
       const s = filas.filter((f) => f.bodega_id === b.id);
       const mias = vs.filter((v) => v.origen_id === b.id);
-      // Si algo quedó en otra moneda (le cambiaron el país), se pasa a la de ahora
-      const vendido = mias.reduce((a, v) => a + (v.moneda === moneda ? totalLocal(v) : totalMov(v) / tasa), 0);
+      const vendido = mias.filter((v) => v.moneda === moneda).reduce((a, v) => a + totalLocal(v), 0);
       const entregado = load()
-        .pagos.filter((p) => p.bodega_id === b.id && !p.anulado)
-        .reduce((a, p) => a + (p.moneda === moneda ? p.valor : (p.valor * (tasaDe(p.moneda) || 1)) / tasa), 0);
+        .pagos.filter((p) => p.bodega_id === b.id && !p.anulado && p.moneda === moneda)
+        .reduce((a, p) => a + Number(p.valor), 0);
       const debe = vendido - entregado;
       return {
         bodega: b,
@@ -561,8 +557,6 @@ export function cuadre() {
         vendido,
         entregado,
         debe,
-        vendidoBase: mias.reduce((a, v) => a + totalMov(v), 0),
-        debeBase: debe * tasa,
       };
     });
 }
@@ -580,7 +574,6 @@ export interface NuevoMovimiento {
   metodo_pago_id?: number;
   curso?: string;
   moneda?: string;
-  tasa?: number;
   nota?: string;
   items: { producto_id: string; cantidad: number; valor_unitario?: number }[];
 }
@@ -643,8 +636,6 @@ function registrarLocal(input: NuevoMovimiento, state: State): Movimiento {
   // La venta va en la moneda del país de donde sale; la compra en la que se pagó; lo demás no lleva plata
   const enPais = state.paises.find((x) => x.nombre === o?.pais);
   const moneda = input.tipo === "venta" ? enPais?.moneda ?? MONEDA : input.tipo === "compra" ? input.moneda || MONEDA : MONEDA;
-  const tasa = moneda === MONEDA ? 1 : input.tipo === "venta" ? enPais?.tasa ?? 0 : Number(input.tasa);
-  if (!(tasa > 0)) throw new Error("Escribe la tasa de cambio.");
 
   const items = input.items.filter((i) => i.producto_id && i.cantidad > 0);
   if (!items.length) throw new Error("Agrega al menos un producto con cantidad.");
@@ -673,7 +664,6 @@ function registrarLocal(input: NuevoMovimiento, state: State): Movimiento {
     metodo_pago_id: input.tipo === "venta" ? input.metodo_pago_id : undefined,
     curso: input.tipo === "venta" ? input.curso?.trim() || undefined : undefined,
     moneda,
-    tasa,
     nota: input.nota?.trim() || undefined,
     anulado: false,
     creado_por: state.yo?.nombre ?? "German",
@@ -681,7 +671,7 @@ function registrarLocal(input: NuevoMovimiento, state: State): Movimiento {
       producto_id: i.producto_id,
       cantidad: i.cantidad,
       valor_unitario: Number(i.valor_unitario) || 0,
-      costo_unitario: input.tipo === "compra" ? (Number(i.valor_unitario) || 0) * tasa : Math.round(costos.get(i.producto_id) ?? 0),
+      costo_unitario: input.tipo === "compra" ? Number(i.valor_unitario) || 0 : Math.round(costos.get(i.producto_id) ?? 0),
     })),
   };
   state.movimientos.push(mov);
@@ -790,15 +780,14 @@ export async function guardarBodega(b: BodegaIn) {
   return id;
 }
 
-/** Países: crear o editar (nombre, moneda y cuántos pesos vale 1 unidad). `antes` = nombre actual al editar. */
-export async function guardarPais(x: { antes?: string; nombre: string; moneda: string; tasa: number }) {
+/** Países: crear o editar (nombre y moneda). `antes` = nombre actual al editar. */
+export async function guardarPais(x: { antes?: string; nombre: string; moneda: string }) {
   const nombre = x.nombre.trim();
-  const tasa = x.moneda === MONEDA ? 1 : x.tasa;
-  if (!DEMO) return (await guardarBase("paises", { id: x.antes, nombre, moneda: x.moneda, tasa }))[0]!;
+  // La base todavía guarda un valor por moneda; va siempre 1 porque ya no se usa
+  if (!DEMO) return (await guardarBase("paises", { id: x.antes, nombre, moneda: x.moneda, tasa: 1 }))[0]!;
   const s = load();
   if (!nombre) throw new Error("Escribe el nombre del país.");
   if (!x.moneda) throw new Error("Elige la moneda.");
-  if (!(tasa > 0)) throw new Error(`Escribe cuántos pesos vale 1 ${x.moneda}.`);
   if (s.paises.some((p) => llave(p.nombre) === llave(nombre) && p.nombre !== x.antes)) throw new Error("Ya existe ese país.");
   const old = s.paises.find((p) => p.nombre === x.antes);
   if (old) {
@@ -812,8 +801,8 @@ export async function guardarPais(x: { antes?: string; nombre: string; moneda: s
         }
       });
     }
-    Object.assign(old, { nombre, moneda: x.moneda, tasa });
-  } else s.paises.push({ nombre, moneda: x.moneda, tasa });
+    Object.assign(old, { nombre, moneda: x.moneda });
+  } else s.paises.push({ nombre, moneda: x.moneda });
   s.paises.sort((a, b) => a.nombre.localeCompare(b.nombre, "es"));
   saveDemo();
   return nombre;
@@ -1029,14 +1018,14 @@ function seed(): State {
     version: VERSION,
     yo: { id: "u1", nombre: "German", usuario: "german", rol: "admin" },
     paises: [
-      { nombre: "Bolivia", moneda: "BOB", tasa: 580 },
-      { nombre: "Colombia", moneda: "COP", tasa: 1 },
-      { nombre: "Ecuador", moneda: "USD", tasa: 4000 },
-      { nombre: "Perú", moneda: "PEN", tasa: 1100 },
-      { nombre: "Puerto Rico", moneda: "USD", tasa: 4000 },
-      { nombre: "República Dominicana", moneda: "DOP", tasa: 65 },
-      { nombre: "Salvador", moneda: "USD", tasa: 4000 },
-      { nombre: "Venezuela", moneda: "USD", tasa: 4000 },
+      { nombre: "Bolivia", moneda: "BOB" },
+      { nombre: "Colombia", moneda: "COP" },
+      { nombre: "Ecuador", moneda: "USD" },
+      { nombre: "Perú", moneda: "PEN" },
+      { nombre: "Puerto Rico", moneda: "USD" },
+      { nombre: "República Dominicana", moneda: "DOP" },
+      { nombre: "Salvador", moneda: "USD" },
+      { nombre: "Venezuela", moneda: "USD" },
     ],
     perfiles: [
       { id: "u0", nombre: "MacV", usuario: "macv", rol: "superadmin", activo: true, creado: "2026-10-01", propio: false },

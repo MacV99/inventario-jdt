@@ -43,6 +43,8 @@ const { label, value, delta, trend = "flat", dataKey, hint } = Astro.props;
     line-height: 1.15;
     color: var(--clr-text);
     font-variant-numeric: tabular-nums;
+    /* Varias monedas: una por línea */
+    white-space: pre-line;
   }
 
   .delta {

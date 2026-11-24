@@ -169,8 +169,7 @@ const tipos = Object.entries(TIPO_MOV).map(([value, t]) => ({ value, label: t.la
     font-size: var(--text-sm);
   }
 
-  [data-show][hidden],
-  [data-tasa][hidden] {
+  [data-show][hidden] {
     display: none;
   }
 
@@ -220,7 +219,7 @@ const tipos = Object.entries(TIPO_MOV).map(([value, t]) => ({ value, label: t.la
   import "../lib/ui";
   import { initTableFilter } from "../lib/ui/table-filter";
   import {
-    movimientos, bodegas, bodega, productos, cantidadEn, registrarMovimiento, anularMovimiento, totalMov, totalLocal, unidadesMov, TIPO_MOV, REGLAS, MONEDA, type TipoMov, type Movimiento, rutaMov, metodosDe, metodoPago, esVentaOficina, monedaDe, precioEn, producto, miBodega, LADO_BODEGUERO, esAdmin,
+    movimientos, bodegas, bodega, productos, cantidadEn, registrarMovimiento, anularMovimiento, totalLocal, unidadesMov, TIPO_MOV, REGLAS, MONEDA, type TipoMov, type Movimiento, rutaMov, metodosDe, metodoPago, esVentaOficina, monedaDe, precioEn, producto, miBodega, LADO_BODEGUERO, esAdmin,
   } from "../lib/store";
   import { conCrearProducto, conCrearBodega, conCrearMetodo } from "../lib/crear-rapido";
   import { money, num, day, dayYear, esc, searchText, menu, dsSelect, intentar, parseNum, urlParam, today, flashRow, opcionesLugar, type DsSelectEl } from "../lib/view";
@@ -239,7 +238,7 @@ const tipos = Object.entries(TIPO_MOV).map(([value, t]) => ({ value, label: t.la
       .map((m) => {
         const t = TIPO_MOV[m.tipo];
         const nombres = m.items.map((i) => producto(i.producto_id)?.nombre);
-        const extra = [esVentaOficina(m) ? "Oficina" : "", m.curso, metodoPago(m.metodo_pago_id)?.nombre, m.tipo === "venta" && m.moneda !== MONEDA ? `${money(totalLocal(m), m.moneda)} (1 ${m.moneda} = ${money(m.tasa)})` : "", m.nota].filter(Boolean).join(" · ");
+        const extra = [esVentaOficina(m) ? "Oficina" : "", m.curso, metodoPago(m.metodo_pago_id)?.nombre, m.nota].filter(Boolean).join(" · ");
         const acciones = [{ value: "ver", label: "Ver detalle", icon: "bi-eye" }, ...(m.anulado || mia ? [] : [{ separator: true }, { value: "anular", label: "Anular", icon: "bi-x-circle", danger: true }])];
         return `<tr data-row data-id="${m.id}" data-tipo="${m.tipo}" data-estado="${m.anulado ? "anulado" : "vigente"}"
             data-ubicacion="${[m.origen_id, m.destino_id].filter(Boolean).join(" ")}" data-text="${esc(searchText(m.id, `#${m.id}`, t.label, m.curso, m.nota, de(m), a(m), ...nombres))}"
@@ -249,7 +248,7 @@ const tipos = Object.entries(TIPO_MOV).map(([value, t]) => ({ value, label: t.la
           <td class="nowrap"><i class="bi ${t.icon} muted" aria-hidden="true"></i> ${t.label}${m.anulado ? ' <span class="badge danger">Anulado</span>' : ""}</td>
           <td class="ruta">${esc(de(m))} <span class="muted">→</span> ${esc(a(m))}${extra ? `<p class="sub">${esc(extra)}</p>` : ""}</td>
           <td class="num tnum" data-sort-value="${unidadesMov(m)}">${num(unidadesMov(m))}</td>
-          <td class="num tnum" data-sort-value="${m.tipo === "venta" ? totalMov(m) : 0}">${m.tipo === "venta" ? money(totalMov(m)) : '<span class="muted">—</span>'}</td>
+          <td class="num tnum" data-sort-value="${m.tipo === "venta" ? totalLocal(m) : 0}">${m.tipo === "venta" ? money(totalLocal(m), m.moneda) : '<span class="muted">—</span>'}</td>
           <td class="nowrap">${esc(m.creado_por)}</td>
           <td class="cell-actions">${menu(acciones)}</td>
         </tr>`;
@@ -288,7 +287,6 @@ const tipos = Object.entries(TIPO_MOV).map(([value, t]) => ({ value, label: t.la
   const conValor = () => t() === "venta";
   const lugarVenta = () => bodega(origen.value);
   const cur = () => (t() === "venta" ? monedaDe(lugarVenta()).moneda : MONEDA);
-  const tasaActual = () => (cur() === MONEDA ? 1 : monedaDe(lugarVenta()).tasa);
 
   const lugares = (tipos: ("bodega" | "monitor")[] | null) =>
     bodegas()
@@ -316,8 +314,7 @@ const tipos = Object.entries(TIPO_MOV).map(([value, t]) => ({ value, label: t.la
       total += sub;
       r.querySelector<HTMLElement>("[data-subtotal]")!.textContent = conValor() && sub ? money(sub, cur()) : "—";
     }
-    const tasa = tasaActual();
-    totalEl.textContent = !conValor() ? "—" : cur() !== MONEDA ? `${money(total, cur())}${tasa ? ` = ${money(total * tasa)}` : ""}` : money(total);
+    totalEl.textContent = !conValor() ? "—" : money(total, cur());
   }
 
   function sync() {
@@ -448,8 +445,7 @@ const tipos = Object.entries(TIPO_MOV).map(([value, t]) => ({ value, label: t.la
       ["Vendido en", esVentaOficina(m) ? "Oficina" : undefined],
       ["Curso", m.curso],
       ["Pago", metodoPago(m.metodo_pago_id)?.nombre],
-      ["Moneda", m.tipo === "venta" && m.moneda !== MONEDA ? `${m.moneda} · 1 ${m.moneda} = ${money(m.tasa)}` : undefined],
-      ["Total", m.tipo !== "venta" ? undefined : m.moneda !== MONEDA ? `${money(totalLocal(m), m.moneda)} = ${money(totalMov(m))}` : money(totalMov(m))],
+      ["Total", m.tipo === "venta" ? money(totalLocal(m), m.moneda) : undefined],
       ["Hecho por", m.creado_por],
       ["Nota", m.nota],
     ];
