@@ -3,7 +3,7 @@
   "configurations": [
     {
       "name": "inventario",
-      "runtimeExecutable": "npm",
+      "runtimeExecutable": "pnpm",
       "runtimeArgs": [
         "run",
         "dev"
